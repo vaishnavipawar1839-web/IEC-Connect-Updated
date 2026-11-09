@@ -129,6 +129,9 @@ export default function Register() {
           <div>
             <h3 className="text-xl font-bold text-[#3d3654]">Create Account</h3>
             <p className="text-sm text-[#7c73a0] mt-1">Fill in your details to register</p>
+            <p className="mt-2 text-xs text-[#7c73a0]">
+              This form creates researcher accounts. Reviewer accounts are issued by an administrator.
+            </p>
           </div>
 
           <form

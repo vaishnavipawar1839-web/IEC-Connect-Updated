@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getAllReviewers,
+  createReviewer,
   getProposalsForAssignment,
   assignReviewers,
   verifyProposal,
@@ -19,6 +20,13 @@ router.get(
   authenticate,
   authorizeRoles("admin"),
   getAllReviewers
+);
+
+router.post(
+  "/reviewers",
+  authenticate,
+  authorizeRoles("admin"),
+  createReviewer
 );
 
 router.get(

@@ -152,7 +152,7 @@ const Login = () => {
       setLoading(true);
       const toastId = toast.loading("Signing in…");
       try {
-        await login(form);
+        await login({ ...form, role: selectedRole.key });
         // Successful login: redirect based on selected role
         toast.success("Signed in successfully", { id: toastId });
         // Navigate to appropriate dashboard (generic for now)

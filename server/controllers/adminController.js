@@ -1,5 +1,6 @@
 import Proposal from "../models/Proposal.js";
 import User from "../models/User.js";
+import bcrypt from "bcryptjs";
 import { transitionProposal } from "../utils/proposalWorkflow.js";
 import { notifyProposalUsers } from "../utils/proposalNotifications.js";
 import { assignProposalReviewers, submitFinalDecision } from "./trackingController.js";
@@ -245,4 +246,55 @@ export const returnProposal = async (req, res) => {
 export const rejectProposal = async (req, res) => {
   req.body = { decision: "rejected", reason: req.body.reason };
   return submitFinalDecision(req, res);
+};
+
+export const createReviewer = async (req, res) => {
+  try {
+    const { name, designation, qualification, department, institution, contact, email, password } = req.body;
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    if (![name, designation, qualification, department, institution, normalizedEmail, password]
+      .every((value) => typeof value === "string" && value.trim())) {
+      return res.status(400).json({ message: "Complete all required reviewer details" });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ message: "Enter a valid email address" });
+    }
+    if (password.length < 10) {
+      return res.status(400).json({ message: "Reviewer password must be at least 10 characters" });
+    }
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) return res.status(409).json({ message: "An account already uses this email" });
+
+    const reviewerCount = await User.countDocuments({ role: "reviewer" });
+    const reviewer = await User.create({
+      name: name.trim(),
+      designation: designation.trim(),
+      qualification: qualification.trim(),
+      department: department.trim(),
+      institution: institution.trim(),
+      contact: typeof contact === "string" ? contact.trim() : "",
+      email: normalizedEmail,
+      password: await bcrypt.hash(password, 10),
+      role: "reviewer",
+      shortCode: `REV${String(reviewerCount + 1).padStart(3, "0")}`,
+    });
+
+    res.status(201).json({
+      message: "Reviewer account created",
+      reviewer: {
+        id: reviewer._id,
+        name: reviewer.name,
+        email: reviewer.email,
+        shortCode: reviewer.shortCode,
+        role: reviewer.role,
+      },
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Reviewer account already exists" });
+    }
+    res.status(500).json({ message: "Failed to create reviewer account" });
+  }
 };

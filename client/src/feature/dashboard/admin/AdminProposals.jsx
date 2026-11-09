@@ -9,6 +9,7 @@ import {
   BadgeCheck,
   AlertTriangle,
   XCircle,
+  UserPlus,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../../../api/axios";
@@ -69,6 +70,18 @@ export default function AdminProposals() {
   const [adminActionDialog, setAdminActionDialog] = useState({ id: null, action: null, title: "" });
   const [assignmentDialog, setAssignmentDialog] = useState({ id: null, title: "" });
   const [selectedReviewerIds, setSelectedReviewerIds] = useState([]);
+  const [createReviewerOpen, setCreateReviewerOpen] = useState(false);
+  const [creatingReviewer, setCreatingReviewer] = useState(false);
+  const [reviewerForm, setReviewerForm] = useState({
+    name: "",
+    designation: "",
+    qualification: "",
+    department: "",
+    institution: "",
+    contact: "",
+    email: "",
+    password: "",
+  });
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminReason, setAdminReason] = useState("");
 
@@ -121,6 +134,31 @@ export default function AdminProposals() {
     } finally {
       setAssignmentDialog({ id: null, title: "" });
       setSelectedReviewerIds([]);
+    }
+  };
+
+  const handleCreateReviewer = async (event) => {
+    event.preventDefault();
+    setCreatingReviewer(true);
+    try {
+      const response = await api.post("/admin/reviewers", reviewerForm);
+      setReviewers((current) => [...current, response.data.reviewer]);
+      setReviewerForm({
+        name: "",
+        designation: "",
+        qualification: "",
+        department: "",
+        institution: "",
+        contact: "",
+        email: "",
+        password: "",
+      });
+      setCreateReviewerOpen(false);
+      toast.success("Reviewer account created. They can now sign in as Reviewer.");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to create reviewer account");
+    } finally {
+      setCreatingReviewer(false);
     }
   };
 
@@ -360,11 +398,16 @@ export default function AdminProposals() {
   return (
     <div className="space-y-8">
       {/* ── Header ── */}
-      <section>
-        <h1 className="text-2xl font-bold text-[#3d3654]">Admin Dashboard</h1>
-        <p className="text-sm text-[#7c73a0] mt-1">
-          Monitor life cycle of proposals, review fees, and manage workflow transitions.
-        </p>
+      <section className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[#3d3654]">Admin Dashboard</h1>
+          <p className="text-sm text-[#7c73a0] mt-1">
+            Monitor life cycle of proposals, review fees, and manage workflow transitions.
+          </p>
+        </div>
+        <Button onClick={() => setCreateReviewerOpen(true)} className="gap-2">
+          <UserPlus className="h-4 w-4" /> Create Reviewer Account
+        </Button>
       </section>
 
       {/* ── Stats ── */}
@@ -590,6 +633,48 @@ export default function AdminProposals() {
               Assign Reviewers
             </Button>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={createReviewerOpen} onOpenChange={setCreateReviewerOpen}>
+        <AlertDialogContent className="max-h-[90vh] overflow-y-auto border-slate-200 rounded-xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Create reviewer account</AlertDialogTitle>
+            <AlertDialogDescription>
+              Reviewer accounts are provisioned by an admin. Give the reviewer their initial password securely.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <form onSubmit={handleCreateReviewer} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {[
+              ["name", "Full name", "text"],
+              ["designation", "Designation", "text"],
+              ["qualification", "Qualification", "text"],
+              ["department", "Department", "text"],
+              ["institution", "Institution", "text"],
+              ["contact", "Contact", "tel"],
+              ["email", "Email", "email"],
+              ["password", "Initial password (10+ characters)", "password"],
+            ].map(([field, label, type]) => (
+              <label key={field} className="space-y-1 text-xs font-medium text-slate-600">
+                <span>{label}</span>
+                <input
+                  type={type}
+                  required={field !== "contact"}
+                  minLength={field === "password" ? 10 : undefined}
+                  autoComplete={field === "password" ? "new-password" : undefined}
+                  value={reviewerForm[field]}
+                  onChange={(event) => setReviewerForm((current) => ({ ...current, [field]: event.target.value }))}
+                  className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm text-slate-900"
+                />
+              </label>
+            ))}
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+              <Button type="submit" disabled={creatingReviewer}>
+                {creatingReviewer ? "Creating..." : "Create Reviewer"}
+              </Button>
+            </div>
+          </form>
         </AlertDialogContent>
       </AlertDialog>
 
