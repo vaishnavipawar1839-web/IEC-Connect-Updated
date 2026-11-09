@@ -1,5 +1,7 @@
 import Proposal from "../models/Proposal.js";
 import User from "../models/User.js";
+import { transitionProposal } from "../utils/proposalWorkflow.js";
+import { notifyProposalUsers } from "../utils/proposalNotifications.js";
 
 /* ================= GET SCRUTINY DASHBOARD ================= */
 export const getScrutinyDashboard = async (req, res) => {
@@ -8,7 +10,8 @@ export const getScrutinyDashboard = async (req, res) => {
 
         // Proposals assigned to scrutiny (status: admin_verified)
         const pendingProposals = await Proposal.find({
-            status: "admin_verified"
+            status: "admin_verified",
+            assignedTo: scrutinyId,
             // In the singleton model, we might not assume direct 'assignedTo' for scrutiny if we just use status.
             // But for consistency, let's assume Admin explicitly assigned it OR 
             // the system auto-assigned it. The status 'admin_verified' implies it's ready for Scrutiny.
@@ -17,19 +20,21 @@ export const getScrutinyDashboard = async (req, res) => {
             .populate("researcher", "name email shortCode")
             .sort({ createdAt: -1 });
 
-        const processedProposals = await Proposal.find({
-            // Scrutiny has touched these? 
-            // Logic: Status is beyond 'admin_verified' => 'scrutiny_verified', 'under_review', etc.
-            // This is tricky without an explicit history log.
-            // For now, let's just show pending.
-            status: { $in: ["scrutiny_verified", "under_review", "approved", "rejected", "revision_required"] }
-        }).countDocuments(); // Just a count for stats maybe?
+        const scrutinyHistory = { statusHistory: { $elemMatch: { actor: scrutinyId } } };
+        const [processedCount, verifiedCount] = await Promise.all([
+            Proposal.countDocuments(scrutinyHistory),
+            Proposal.countDocuments({
+                statusHistory: { $elemMatch: { actor: scrutinyId, to: "scrutiny_verified" } },
+            }),
+        ]);
 
 
         res.json({
             pending: pendingProposals,
             stats: {
-                pendingCount: pendingProposals.length
+                pendingCount: pendingProposals.length,
+                processedCount,
+                verifiedCount,
             }
         });
 
@@ -52,24 +57,9 @@ export const scrutinyAction = async (req, res) => {
         }
 
         if (decision === "approve") {
-            proposal.status = "scrutiny_verified";
-            // Auto-assign to REVIEWER role if single account exists?
-            const reviewers = await User.find({ role: "reviewer" });
-            if (reviewers.length > 0) {
-                proposal.assignedTo = reviewers.map(r => r._id);
-                proposal.reviewers = reviewers.map(r => r._id); // legacy support
-                proposal.status = "under_review"; // Skip explicit 'scrutiny_verified' status if we auto-assign? 
-                // Or keep it 'scrutiny_verified' and let Admin assign?
-                // User said: "if accpts it will be assigned to reviewer"
-                // "as there will be one account for each roles... it will directly get assigned"
-                // So we auto-transition to under_review and assign to ALL reviewers (since there is one).
-            } else {
-                // If no reviewer found, maybe keep at 'scrutiny_verified' waiting for admin intervention?
-                // But prompt implies automation.
-                proposal.status = "scrutiny_verified";
-            }
+            transitionProposal(proposal, "scrutiny_verified", req.user.id, comments || "SRC approved proposal");
         } else if (decision === "reject") {
-            proposal.status = "revision_required";
+            transitionProposal(proposal, "revision_required", req.user.id, comments || "SRC requested a revision");
             proposal.comments.push({
                 reviewer: req.user.id, // Scrutiny user
                 text: comments || "Rejected by Scrutiny Committee",
@@ -81,6 +71,24 @@ export const scrutinyAction = async (req, res) => {
         }
 
         await proposal.save();
+        if (decision === "approve") {
+            const admins = await User.find({ role: "admin" }).select("_id");
+            await notifyProposalUsers({
+                recipients: admins,
+                proposalId: proposal._id,
+                type: "reviewer_assignment_required",
+                title: "SRC approved proposal; assign a reviewer",
+                message: `${proposal.title || "A proposal"} passed SRC review and is awaiting reviewer assignment.`,
+            });
+        } else {
+            await notifyProposalUsers({
+                recipients: [proposal.researcher],
+                proposalId: proposal._id,
+                type: "src_revision_required",
+                title: "SRC requested a proposal revision",
+                message: `${proposal.title || "Your proposal"} needs revision before it can continue. Reason: ${comments || "Please review the SRC feedback."}`,
+            });
+        }
         res.json({ message: "Action submitted successfully", proposal });
 
     } catch (error) {

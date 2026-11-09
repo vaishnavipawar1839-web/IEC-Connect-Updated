@@ -92,9 +92,10 @@ export default function ResearcherDashboard() {
       </section>
 
       {/* Stats */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         <StatCard title="Total Proposals" value={stats.total} icon={<FileText />} color="lavender" />
         <StatCard title="Under Review" value={stats.underReview} icon={<Clock />} color="amber" />
+        <StatCard title="Awaiting Admin Decision" value={stats.awaitingDecision} icon={<Clock />} color="amber" />
         <StatCard title="Approved" value={stats.approved} icon={<CheckCircle />} color="mint" />
         <StatCard title="Action Required" value={stats.actionRequired} icon={<AlertCircle />} color="red" />
       </section>
@@ -346,6 +347,8 @@ function statusBadge(status) {
     submitted: "bg-[#f0eeff] text-[#6d5ce8] border-[#d4ccff]",
     fees_pending: "bg-[#fff1f2] text-[#be123c] border-[#fecdd3]",
     admin_verified: "bg-[#e0f2fe] text-[#0369a1] border-[#bae6fd]",
+    scrutiny_verified: "bg-[#e0f2fe] text-[#0369a1] border-[#bae6fd]",
+    admin_decision_pending: "bg-[#fff8e6] text-[#a16207] border-[#fde68a]",
     under_review: "bg-[#fff8e6] text-[#a16207] border-[#fde68a]",
     approved: "bg-[#e0f7f1] text-[#2d7a65] border-[#b2edd9]",
     revision_required: "bg-[#fff1f2] text-[#be123c] border-[#fecdd3]",

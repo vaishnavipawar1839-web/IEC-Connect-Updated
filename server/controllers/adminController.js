@@ -1,5 +1,8 @@
 import Proposal from "../models/Proposal.js";
 import User from "../models/User.js";
+import { transitionProposal } from "../utils/proposalWorkflow.js";
+import { notifyProposalUsers } from "../utils/proposalNotifications.js";
+import { assignProposalReviewers, submitFinalDecision } from "./trackingController.js";
 
 /* ─────────────────────────────────────────────
    FEE RULES  (based on the IEC fee schedule)
@@ -106,11 +109,18 @@ export const verifyPayment = async (req, res) => {
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
 
     proposal.paymentStatus = "Payment Verified";
-    proposal.status = "submitted"; // Reset to submitted so it can be forwarded
+    transitionProposal(proposal, "submitted", req.user.id, "Payment verified by admin");
     proposal.paymentVerifiedBy = req.user.id;
     proposal.paymentVerifiedAt = new Date();
 
     await proposal.save();
+    await notifyProposalUsers({
+      recipients: [proposal.researcher],
+      proposalId: proposal._id,
+      type: "payment_verified",
+      title: "Proposal payment verified",
+      message: `Payment for ${proposal.title || "your proposal"} has been verified and it is awaiting admin review.`,
+    });
     res.json({ message: "Payment verified successfully", proposal });
   } catch (error) {
     res.status(500).json({ message: "Failed to verify payment", error: error.message });
@@ -128,10 +138,17 @@ export const rejectPayment = async (req, res) => {
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
 
     proposal.paymentStatus = "Rejected";
-    proposal.status = "fees_pending";
+    transitionProposal(proposal, "fees_pending", req.user.id, reason);
     proposal.rejectionReason = reason;
 
     await proposal.save();
+    await notifyProposalUsers({
+      recipients: [proposal.researcher],
+      proposalId: proposal._id,
+      type: "payment_rejected",
+      title: "Proposal payment needs attention",
+      message: `Payment proof for ${proposal.title || "your proposal"} was rejected. Reason: ${reason}`,
+    });
     res.json({ message: "Payment rejected", proposal });
   } catch (error) {
     res.status(500).json({ message: "Failed to reject payment", error: error.message });
@@ -163,9 +180,16 @@ export const verifyProposal = async (req, res) => {
     }
 
     proposal.assignedTo = scrutinyUsers.map((u) => u._id);
-    proposal.status = "admin_verified";
+    transitionProposal(proposal, "admin_verified", req.user.id, "Admin approved and forwarded to SRC");
 
     await proposal.save();
+    await notifyProposalUsers({
+      recipients: scrutinyUsers,
+      proposalId: proposal._id,
+      type: "src_review_required",
+      title: "Proposal awaiting SRC review",
+      message: `${proposal.title || "A proposal"} was approved by admin and is ready for SRC review.`,
+    });
 
     res.json({
       message: "Proposal verified and forwarded to Scrutiny",
@@ -180,36 +204,8 @@ export const verifyProposal = async (req, res) => {
 
 /* ================= ASSIGN REVIEWERS (legacy) ================= */
 export const assignReviewers = async (req, res) => {
-  try {
-    const { reviewers } = req.body;
-
-    if (!Array.isArray(reviewers) || reviewers.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one reviewer must be assigned" });
-    }
-
-    const proposal = await Proposal.findById(req.params.id);
-    if (!proposal) {
-      return res.status(404).json({ message: "Proposal not found" });
-    }
-
-    if (proposal.status !== "submitted") {
-      return res
-        .status(400)
-        .json({ message: "Proposal is not eligible for assignment" });
-    }
-
-    proposal.reviewers = reviewers;
-    proposal.assignedTo = reviewers;
-    proposal.status = "under_review";
-
-    await proposal.save();
-
-    res.json({ message: "Reviewers assigned successfully", proposal });
-  } catch {
-    res.status(500).json({ message: "Failed to assign reviewers" });
-  }
+  req.body = { reviewerIds: req.body.reviewerIds || req.body.reviewers };
+  return assignProposalReviewers(req, res);
 };
 
 /* ================= RETURN PROPOSAL FOR CORRECTION (Admin) ================= */
@@ -222,13 +218,20 @@ export const returnProposal = async (req, res) => {
     const proposal = await Proposal.findById(id);
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
 
-    proposal.status = "returned";
+    transitionProposal(proposal, "returned", req.user.id, reason);
     proposal.returnReason = reason;
 
     // Optional: Reset payment status if needed? 
     // Usually correction is for form data, not payment.
 
     await proposal.save();
+    await notifyProposalUsers({
+      recipients: [proposal.researcher],
+      proposalId: proposal._id,
+      type: "proposal_returned",
+      title: "Proposal returned for revision",
+      message: `${proposal.title || "Your proposal"} was returned for revision. Reason: ${reason}`,
+    });
     res.json({ message: "Proposal returned for correction", proposal });
   } catch (error) {
     res.status(500).json({ message: "Failed to return proposal", error: error.message });
@@ -237,20 +240,6 @@ export const returnProposal = async (req, res) => {
 
 /* ================= REJECT PROPOSAL (Admin) ================= */
 export const rejectProposal = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { reason } = req.body;
-    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
-
-    const proposal = await Proposal.findById(id);
-    if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-
-    proposal.status = "rejected";
-    proposal.rejectionReason = reason;
-
-    await proposal.save();
-    res.json({ message: "Proposal has been rejected permanently", proposal });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to reject proposal", error: error.message });
-  }
+  req.body = { decision: "rejected", reason: req.body.reason };
+  return submitFinalDecision(req, res);
 };

@@ -145,7 +145,7 @@ export default function ReviewerDashboard() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        {p.status === "under_review" && (
+                        {p.status === "under_review" && !p.myReviewSubmitted && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -156,9 +156,15 @@ export default function ReviewerDashboard() {
                             <FileSearch className="h-4 w-4" />
                           </Button>
                         )}
-                        {p.status !== "under_review" && (
+                        {(p.status !== "under_review" || p.myReviewSubmitted) && (
                           <span className="text-[10px] uppercase font-bold text-[#a09ac0] tracking-wider">
-                            {p.status === "revision_required" ? "Awaiting Revision" : "Completed"}
+                            {p.status === "admin_decision_pending"
+                              ? "Awaiting Admin Decision"
+                              : p.status === "under_review" && p.myReviewSubmitted
+                                ? "Recommendation Submitted"
+                                : p.status === "revision_required"
+                                  ? "Awaiting Revision"
+                                  : "Completed"}
                           </span>
                         )}
                       </div>
@@ -197,6 +203,7 @@ function StatCard({ title, value, icon, color }) {
 function statusBadge(status) {
   return {
     under_review: "bg-[#fff8e6] text-[#a16207] border-[#fde68a]",
+    admin_decision_pending: "bg-[#fff8e6] text-[#a16207] border-[#fde68a]",
     approved: "bg-[#e0f7f1] text-[#2d7a65] border-[#b2edd9]",
     rejected: "bg-[#fff1f2] text-[#be123c] border-[#fecdd3]",
   }[status] || "bg-[#f0eeff] text-[#6d5ce8] border-[#d4ccff]";

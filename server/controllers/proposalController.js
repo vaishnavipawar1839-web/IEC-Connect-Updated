@@ -2,12 +2,16 @@ import Proposal from "../models/Proposal.js";
 import { getFeeInfo } from "./adminController.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import User from "../models/User.js";
 import {
   canAccessProposal,
   getResearcherFields,
   isAssignedReviewer,
   isProposalOwner,
 } from "../utils/proposalAccess.js";
+import { initializeProposalHistory, transitionProposal } from "../utils/proposalWorkflow.js";
+import { notifyProposalUsers } from "../utils/proposalNotifications.js";
+import { submitReviewerRecommendation } from "./trackingController.js";
 
 export const saveDraft = async (req, res) => {
   try {
@@ -34,6 +38,7 @@ export const saveDraft = async (req, res) => {
       if (!proposal) return res.status(404).json({ message: "Draft not found" });
     } else {
       proposal = new Proposal({ ...proposalData, status: "draft" });
+      initializeProposalHistory(proposal, req.user.id);
       await proposal.save({ validateBeforeSave: false });
     }
 
@@ -63,10 +68,7 @@ export const submitProposal = async (req, res) => {
     // If the proposal is being resubmitted after a return/revision,
     // the fee was already decided — don't reset it.
     const isFirstSubmission = proposal.status === "draft";
-    const alreadyPaidOrFree =
-      proposal.paymentStatus === "Payment Verified" || 
-      proposal.paymentStatus === "Verified" ||
-      proposal.totalPayable === 0;
+    const isRevision = ["returned", "revision_required"].includes(proposal.status);
 
     if (isFirstSubmission) {
       // Fresh submission: calculate and apply fees
@@ -86,31 +88,31 @@ export const submitProposal = async (req, res) => {
           message: `A review fee of ₹${proposal.totalPayable} is required. Please pay via Razorpay or upload a receipt in Section G before submitting.` 
         });
       }
-      proposal.status = "fees_pending";
     }
-    // For resubmissions (returned / revision_required): leave fee fields untouched.
-    // ──────────────────────────────────────────────────────────────────────────
-
-    // Auto-transition to submitted (or under_review) if fee is cleared
-    if (isFirstSubmission || alreadyPaidOrFree) {
-      const feeCleared =
-        proposal.paymentStatus === "Payment Verified" || 
-        proposal.paymentStatus === "Verified" ||
-        proposal.totalPayable === 0;
-
-      if (feeCleared) {
-        if (proposal.reviewers && proposal.reviewers.length > 0) {
-          proposal.status = "under_review";
-        } else {
-          proposal.status = "submitted";
-        }
-      }
-    } else {
-      // Resubmission after return/revision — always land in submitted
-      proposal.status = "submitted";
+    if (isRevision) {
+      proposal.reviewCycle = (proposal.reviewCycle || 1) + 1;
+      proposal.finalDecision = undefined;
+      proposal.rejectionReason = undefined;
+      proposal.returnReason = undefined;
     }
 
+    transitionProposal(
+      proposal,
+      "submitted",
+      req.user.id,
+      isRevision ? "Researcher revised and resubmitted proposal" : "Researcher submitted proposal"
+    );
     await proposal.save();
+    const admins = await User.find({ role: "admin" }).select("_id");
+    await notifyProposalUsers({
+      recipients: [proposal.researcher, ...admins],
+      proposalId: proposal._id,
+      type: isRevision ? "proposal_resubmitted" : "proposal_submitted",
+      title: isRevision ? "Revised proposal resubmitted" : "Proposal submitted",
+      message: isRevision
+        ? `${proposal.title || "A proposal"} has been revised and resubmitted for admin approval.`
+        : `${proposal.title || "A proposal"} has been submitted and is awaiting admin review.`,
+    });
     res.json({ message: "Proposal submitted", proposal });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -307,8 +309,21 @@ export const resubmitProposal = async (req, res) => {
       text: responseText,
       createdAt: new Date()
     });
-    proposal.status = "submitted";
+    if (!["returned", "revision_required"].includes(proposal.status)) {
+      return res.status(409).json({ message: "Proposal is not awaiting researcher revision" });
+    }
+    proposal.reviewCycle = (proposal.reviewCycle || 1) + 1;
+    proposal.finalDecision = undefined;
+    transitionProposal(proposal, "submitted", req.user.id, "Researcher revised and resubmitted proposal");
     await proposal.save();
+    const admins = await User.find({ role: "admin" }).select("_id");
+    await notifyProposalUsers({
+      recipients: [proposal.researcher, ...admins],
+      proposalId: proposal._id,
+      type: "proposal_resubmitted",
+      title: "Revised proposal resubmitted",
+      message: `${proposal.title || "A proposal"} has been revised and resubmitted for admin approval.`,
+    });
     res.json({ message: "Proposal resubmitted", proposal });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
@@ -335,37 +350,16 @@ export const getProposalForReview = async (req, res) => {
 };
 
 export const addReviewComment = async (req, res) => {
-  try {
-    const { text, decision } = req.body;
-
-    const proposal = await Proposal.findById(req.params.proposalId);
-
-    if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-
-    if (!isAssignedReviewer(proposal, req.user.id)) {
-      return res.status(403).json({ message: "Not authorized to comment" });
-    }
-
-    proposal.comments.push({
-      reviewer: req.user.id,
-      text,
-      decision,
-    });
-
-    if (decision === "revision_required") {
-      proposal.status = "revision_required";
-    } else if (decision === "rejected") {
-      proposal.status = "rejected";
-    } else if (decision === "approved") {
-      proposal.status = "approved";
-    }
-
-    await proposal.save();
-
-    res.json({ message: "Comment added", proposal });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to add comment", error: error.message });
-  }
+  const recommendationByDecision = {
+    approved: "approve",
+    revision_required: "request_revision",
+    rejected: "reject",
+  };
+  req.body = {
+    recommendation: recommendationByDecision[req.body.decision],
+    comments: req.body.text,
+  };
+  return submitReviewerRecommendation(req, res);
 };
 
 /* ================= WITHDRAW PROPOSAL (Researcher) ================= */
@@ -384,7 +378,7 @@ export const withdrawProposal = async (req, res) => {
       return res.status(400).json({ message: "Proposal cannot be withdrawn at this stage" });
     }
 
-    proposal.status = "withdrawn";
+    transitionProposal(proposal, "withdrawn", req.user.id, "Researcher withdrew proposal");
     proposal.withdrawnAt = new Date();
     proposal.withdrawnBy = req.user.id;
     await proposal.save();

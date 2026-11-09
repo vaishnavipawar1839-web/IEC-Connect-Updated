@@ -69,6 +69,9 @@ PORT=5000
 MONGO_URI=your_mongodb_connection_string  
 JWT_SECRET=your_secret_key  
 JWT_REFRESH_SECRET=your_refresh_secret_key
+EMAIL_USER=your_smtp_account
+EMAIL_PASS=your_smtp_app_password
+APP_URL=http://localhost:5173
 
 Run backend:
 npm start  
@@ -86,16 +89,24 @@ npm run dev
 5. Backend validates token and role  
 
 ## 🔄 Workflow
-1. Researcher submits proposal  
-2. Scrutiny verifies documents  
-3. Admin assigns reviewers  
-4. Reviewers evaluate proposal  
-5. Admin makes final decision  
-6. Researcher gets notified  
+1. Researcher submits; researcher and admin receive email and in-app notification.
+2. Admin approves and forwards to SRC; assigned SRC members are notified.
+3. SRC approves and returns the proposal to admin for reviewer appointment.
+4. Admin assigns one or more reviewers; each selected reviewer is notified.
+5. Reviewers submit individual recommendations; after all assigned reviewers respond, admin is notified to make the final decision.
+6. Admin approves or rejects. Approval notifies the researcher; rejection is recorded and sent back for researcher revision and resubmission.
 
 ## 🧪 Testing
 Run server tests from the `server` directory with `npm test`.
 Check the client from the `client` directory with `npm run lint` and `npm run build`.
+
+## 📍 Proposal Tracking API
+- `GET /api/tracking/proposals/:id` returns the current status, timeline, reviewer progress, and final decision.
+- `POST /api/tracking/proposals/:id/assign-reviewers` accepts `{ "reviewerIds": ["..."] }` from an admin after SRC approval.
+- `POST /api/tracking/proposals/:id/reviews` accepts `{ "recommendation": "approve | request_revision | reject", "comments": "..." }` from an assigned reviewer.
+- `POST /api/tracking/proposals/:id/final-decision` accepts `{ "decision": "approved | rejected", "reason": "..." }` from an admin after all assigned reviewers respond.
+
+Proposal status transitions are kept in an append-only `statusHistory`. Reviewer recommendations are stored per reviewer and review cycle; resubmissions start a new cycle without deleting previous records. Email delivery requires the `EMAIL_USER`, `EMAIL_PASS`, and `APP_URL` environment variables; notification and workflow writes continue if email delivery is unavailable.
 
 ## 📈 Future Scope
 - AI-based proposal analysis  

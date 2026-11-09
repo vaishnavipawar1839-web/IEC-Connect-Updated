@@ -1,7 +1,8 @@
 import { Shield, Menu, X, LogOut, Bell } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import api from "../../api/axios";
 
 const linkClass =
   "block py-2 px-3 text-[#7c73a0] hover:text-[#8b7cf6] transition-colors text-sm font-medium rounded-lg hover:bg-[#f0eeff]";
@@ -15,13 +16,68 @@ function navClass({ isActive }) {
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const { user, logout, status } = useAuth();
+
+  useEffect(() => {
+    if (status !== "authenticated") return undefined;
+
+    let active = true;
+    const loadNotifications = async () => {
+      try {
+        const response = await api.get("/notifications");
+        if (active) {
+          setNotifications(response.data.notifications || []);
+          setUnreadCount(response.data.unreadCount || 0);
+        }
+      } catch {
+        if (active) setNotifications([]);
+      }
+    };
+
+    loadNotifications();
+    const intervalId = window.setInterval(loadNotifications, 60000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [status]);
 
   const handleLogout = async () => {
     await logout();
     setOpen(false);
+    setNotifications([]);
+    setUnreadCount(0);
     navigate("/login");
+  };
+
+  const openNotification = async (notification) => {
+    if (!notification.readAt) {
+      try {
+        await api.patch(`/notifications/${notification._id}/read`);
+        setUnreadCount((count) => Math.max(0, count - 1));
+        setNotifications((items) => items.map((item) =>
+          item._id === notification._id ? { ...item, readAt: new Date().toISOString() } : item
+        ));
+      } catch {
+        return;
+      }
+    }
+    setNotificationsOpen(false);
+    if (notification.proposal?._id) navigate(`/proposals/${notification.proposal._id}`);
+  };
+
+  const markAllRead = async () => {
+    try {
+      await api.patch("/notifications/read-all");
+      setUnreadCount(0);
+      setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));
+    } catch {
+      // Keep the current unread state if the request fails.
+    }
   };
 
   return (
@@ -63,6 +119,57 @@ export default function Navbar() {
         <div className="flex items-center justify-end flex-1 gap-3">
           {status === "authenticated" ? (
             <>
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+                  aria-expanded={notificationsOpen}
+                  onClick={() => setNotificationsOpen((value) => !value)}
+                  className="relative rounded-lg border border-[#e5e1ff] p-2 text-[#625b78] hover:bg-[#f5f3ff]"
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-4 text-white">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+                {notificationsOpen && (
+                  <section className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl" aria-label="Notifications">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+                      <button
+                        type="button"
+                        onClick={markAllRead}
+                        disabled={!unreadCount}
+                        className="text-xs font-medium text-sky-700 disabled:text-slate-400"
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+                    <ul className="max-h-[min(60vh,26rem)] overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length ? notifications.map((notification) => (
+                        <li key={notification._id}>
+                          <button
+                            type="button"
+                            onClick={() => openNotification(notification)}
+                            className={`w-full px-4 py-3 text-left hover:bg-slate-50 ${notification.readAt ? "bg-white" : "bg-sky-50/60"}`}
+                          >
+                            <span className="block text-sm font-semibold text-slate-800">{notification.title}</span>
+                            <span className="mt-1 block text-xs text-slate-600">{notification.message}</span>
+                            <span className="mt-1 block text-[11px] text-slate-400">
+                              {new Date(notification.createdAt).toLocaleString()}
+                            </span>
+                          </button>
+                        </li>
+                      )) : (
+                        <li className="px-4 py-8 text-center text-sm text-slate-500">You’re all caught up.</li>
+                      )}
+                    </ul>
+                  </section>
+                )}
+              </div>
+
               {/* User Info & Notifications */}
               <div className="hidden sm:flex items-center gap-4 border-r border-[#e5e1ff] pr-4 py-1">
                 <div className="flex flex-col items-end">

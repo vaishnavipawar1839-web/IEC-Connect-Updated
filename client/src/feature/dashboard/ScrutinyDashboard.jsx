@@ -35,7 +35,7 @@ export default function ScrutinyDashboard() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [pendingProposals, setPendingProposals] = useState([]);
-    const [stats, setStats] = useState({ pendingCount: 0 });
+    const [stats, setStats] = useState({ pendingCount: 0, processedCount: 0, verifiedCount: 0 });
     const [confirmation, setConfirmation] = useState({ id: null, decision: null });
 
     useEffect(() => {
@@ -60,8 +60,8 @@ export default function ScrutinyDashboard() {
             await api.post(`/scrutiny/${id}/action`, { decision });
             toast.success(
                 decision === "approve"
-                    ? "Proposal approved and forwarded to reviewer"
-                    : "Proposal rejected"
+                    ? "SRC approved proposal; admin notified to appoint a reviewer"
+                    : "Revision requested from researcher"
             );
             setPendingProposals((prev) => prev.filter((p) => p._id !== id));
             setStats((prev) => ({ ...prev, pendingCount: prev.pendingCount - 1 }));
@@ -94,8 +94,8 @@ export default function ScrutinyDashboard() {
             {/* Stats */}
             <section className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <StatCard title="Pending Scrutiny" value={stats.pendingCount} icon={<Clock />} color="amber" />
-                <StatCard title="Scrutiny Verified" value="—" icon={<CheckCircle />} color="mint" />
-                <StatCard title="Total Processed" value="—" icon={<ClipboardList />} color="lavender" />
+                <StatCard title="Scrutiny Verified" value={stats.verifiedCount} icon={<CheckCircle />} color="mint" />
+                <StatCard title="Total Processed" value={stats.processedCount} icon={<ClipboardList />} color="lavender" />
             </section>
 
             {/* Pending Table */}

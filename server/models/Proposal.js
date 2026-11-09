@@ -50,6 +50,29 @@ const checklistSchema = new mongoose.Schema({
     otherDocuments: { type: Boolean, default: false }
 }, { _id: false });
 
+const statusHistorySchema = new mongoose.Schema({
+    from: { type: String, default: null },
+    to: { type: String, required: true },
+    actor: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    reason: { type: String, trim: true, default: "" },
+    createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const reviewRecordSchema = new mongoose.Schema({
+    reviewer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    cycle: { type: Number, required: true, default: 1 },
+    recommendation: { type: String, enum: ["approve", "request_revision", "reject"], required: true },
+    comments: { type: String, trim: true, required: true },
+    submittedAt: { type: Date, default: Date.now }
+});
+
+const finalDecisionSchema = new mongoose.Schema({
+    decision: { type: String, enum: ["approved", "rejected", "returned"], required: true },
+    reason: { type: String, trim: true, default: "" },
+    decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    decidedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const proposalSchema = new mongoose.Schema(
     {
         title: { type: String },
@@ -70,6 +93,7 @@ const proposalSchema = new mongoose.Schema(
                 "admin_verified",
                 "scrutiny_verified",
                 "under_review",
+                "admin_decision_pending",
                 "revision_required",
                 "approved",
                 "rejected"
@@ -209,6 +233,10 @@ const proposalSchema = new mongoose.Schema(
         reviewers: [
             { type: mongoose.Schema.Types.ObjectId, ref: "User" }
         ],
+        reviewCycle: { type: Number, default: 1 },
+        reviewRecords: [reviewRecordSchema],
+        finalDecision: { type: finalDecisionSchema },
+        statusHistory: { type: [statusHistorySchema], default: [] },
         assignedTo: [
             { type: mongoose.Schema.Types.ObjectId, ref: "User" }
         ],

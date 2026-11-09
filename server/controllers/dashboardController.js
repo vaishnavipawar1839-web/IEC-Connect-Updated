@@ -15,6 +15,10 @@ export const researcherDashboard = async (req, res) => {
       researcher: researcherId,
       status: "under_review"
     }),
+    awaitingDecision: await Proposal.countDocuments({
+      researcher: researcherId,
+      status: "admin_decision_pending"
+    }),
     approved: await Proposal.countDocuments({
       researcher: researcherId,
       status: "approved"
@@ -34,25 +38,30 @@ export const reviewerDashboard = async (req, res) => {
   try {
     const reviewerId = req.user.id;
 
-    const assignedProposals = await Proposal.find({
+    const assignedProposalDocuments = await Proposal.find({
       $or: [{ assignedTo: reviewerId }, { reviewers: reviewerId }]
     })
-      .select("title status createdAt researcher")
+      .select("title status createdAt researcher reviewCycle reviewRecords")
       .populate("researcher", "shortCode")
       .sort({ createdAt: -1 });
+    const assignedProposals = assignedProposalDocuments.map((proposal) => ({
+      ...proposal.toObject(),
+      myReviewSubmitted: (proposal.reviewRecords || []).some(
+        (review) => review.reviewer.toString() === reviewerId &&
+          (review.cycle || 1) === (proposal.reviewCycle || 1)
+      ),
+    }));
+
+    const pendingCount = assignedProposals.filter(
+      (proposal) => proposal.status === "under_review" && !proposal.myReviewSubmitted
+    ).length;
 
     const stats = {
       totalAssigned: await Proposal.countDocuments({
         $or: [{ assignedTo: reviewerId }, { reviewers: reviewerId }]
       }),
-      pending: await Proposal.countDocuments({
-        $or: [{ assignedTo: reviewerId }, { reviewers: reviewerId }],
-        status: "under_review"
-      }),
-      completed: await Proposal.countDocuments({
-        $or: [{ assignedTo: reviewerId }, { reviewers: reviewerId }],
-        status: { $in: ["approved", "rejected"] }
-      })
+      pending: pendingCount,
+      completed: assignedProposals.filter((proposal) => proposal.myReviewSubmitted).length,
     };
 
     res.json({
@@ -74,6 +83,7 @@ export const adminDashboard = async (req, res) => {
       totalProposals,
       approved,
       underReview,
+      awaitingDecision,
       revisionRequired,
       rejected,
       totalUsers,
@@ -83,6 +93,7 @@ export const adminDashboard = async (req, res) => {
       Proposal.countDocuments(),
       Proposal.countDocuments({ status: "approved" }),
       Proposal.countDocuments({ status: "under_review" }),
+      Proposal.countDocuments({ status: "admin_decision_pending" }),
       Proposal.countDocuments({ status: "revision_required" }),
       Proposal.countDocuments({ status: "rejected" }),
       User.countDocuments(),
@@ -95,6 +106,7 @@ export const adminDashboard = async (req, res) => {
         total: totalProposals,
         approved,
         underReview,
+        awaitingDecision,
         revisionRequired,
         rejected
       },

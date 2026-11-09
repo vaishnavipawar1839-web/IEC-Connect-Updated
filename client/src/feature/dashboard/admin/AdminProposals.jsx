@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import api from "../../../api/axios";
+import { assignProposalReviewers } from "../../../api/trackingApi";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -60,23 +61,28 @@ export default function AdminProposals() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [proposals, setProposals] = useState([]);
+  const [reviewers, setReviewers] = useState([]);
 
   // Dialog state
   const [verifyId, setVerifyId] = useState(null);
   const [paymentDialog, setPaymentDialog] = useState({ id: null, action: null, proposal: null });
   const [adminActionDialog, setAdminActionDialog] = useState({ id: null, action: null, title: "" });
+  const [assignmentDialog, setAssignmentDialog] = useState({ id: null, title: "" });
+  const [selectedReviewerIds, setSelectedReviewerIds] = useState([]);
   const [rejectionReason, setRejectionReason] = useState("");
   const [adminReason, setAdminReason] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, proposalsRes] = await Promise.all([
+        const [statsRes, proposalsRes, reviewersRes] = await Promise.all([
           api.get("/dashboard/admin"),
           api.get("/admin/proposals"),
+          api.get("/admin/reviewers"),
         ]);
         setStats(statsRes.data);
         setProposals(proposalsRes.data);
+        setReviewers(reviewersRes.data);
       } catch {
         toast.error("Failed to load admin dashboard data");
       } finally {
@@ -97,6 +103,24 @@ export default function AdminProposals() {
       toast.error(msg);
     } finally {
       setVerifyId(null);
+    }
+  };
+
+  const handleAssignReviewers = async () => {
+    const { id } = assignmentDialog;
+    if (!id || !selectedReviewerIds.length) {
+      return toast.error("Select at least one reviewer");
+    }
+    try {
+      await assignProposalReviewers(id, selectedReviewerIds);
+      toast.success("Reviewers assigned and notified");
+      const response = await api.get("/admin/proposals");
+      setProposals(response.data);
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to assign reviewers");
+    } finally {
+      setAssignmentDialog({ id: null, title: "" });
+      setSelectedReviewerIds([]);
     }
   };
 
@@ -271,16 +295,32 @@ export default function AdminProposals() {
                               </Button>
                             )}
 
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!isFree && !isPaid}
-                              title={isFree || isPaid ? "Verify & Forward" : "Payment pending"}
-                              className={`rounded-lg text-[10px] font-bold h-8 px-2 ${(isFree || isPaid) ? "text-[#8b7cf6] hover:bg-[#ede9ff]" : "text-[#bcb8d8] opacity-50 cursor-not-allowed"}`}
-                              onClick={() => (isFree || isPaid) && setVerifyId(p._id)}
-                            >
-                              Forward
-                            </Button>
+                            {p.status === "submitted" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={!isFree && !isPaid}
+                                title={isFree || isPaid ? "Approve and forward to SRC" : "Payment pending"}
+                                className={`rounded-lg text-[10px] font-bold h-8 px-2 ${(isFree || isPaid) ? "text-[#8b7cf6] hover:bg-[#ede9ff]" : "text-[#bcb8d8] opacity-50 cursor-not-allowed"}`}
+                                onClick={() => (isFree || isPaid) && setVerifyId(p._id)}
+                              >
+                                Approve to SRC
+                              </Button>
+                            )}
+
+                            {p.status === "scrutiny_verified" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-lg text-[10px] font-bold h-8 px-2 text-sky-700 hover:bg-sky-50"
+                                onClick={() => {
+                                  setAssignmentDialog({ id: p._id, title: p.administrative?.studyTitle || p.title });
+                                  setSelectedReviewerIds([]);
+                                }}
+                              >
+                                Appoint Reviewer
+                              </Button>
+                            )}
 
                             <Button
                               variant="ghost"
@@ -291,14 +331,6 @@ export default function AdminProposals() {
                               Return
                             </Button>
 
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="rounded-lg text-[#be185d] hover:bg-[#fff1f2] text-[10px] font-bold h-8 px-2"
-                              onClick={() => setAdminActionDialog({ id: p._id, action: "reject", title: "Reject Proposal" })}
-                            >
-                              Reject
-                            </Button>
                           </>
                         )}
                       </div>
@@ -336,10 +368,11 @@ export default function AdminProposals() {
       </section>
 
       {/* ── Stats ── */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         <StatCard title="Total Proposals" value={stats.proposals.total} icon={<Layers />} color="lavender" />
         <StatCard title="Approved" value={stats.proposals.approved} icon={<CheckCircle />} color="mint" />
         <StatCard title="Under Review" value={stats.proposals.underReview} icon={<Clock />} color="amber" />
+        <StatCard title="Final Decision Needed" value={stats.proposals.awaitingDecision} icon={<BadgeCheck />} color="amber" />
         <StatCard title="Total Users" value={stats.users.total} icon={<Users />} color="rose" />
       </section>
 
@@ -519,6 +552,47 @@ export default function AdminProposals() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={!!assignmentDialog.id}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAssignmentDialog({ id: null, title: "" });
+            setSelectedReviewerIds([]);
+          }
+        }}
+      >
+        <AlertDialogContent className="border-slate-200 rounded-xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Appoint proposal reviewers</AlertDialogTitle>
+            <AlertDialogDescription>
+              Select one or more reviewers for {assignmentDialog.title || "this proposal"}. Each reviewer will receive an email and in-app notification.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border border-slate-200 p-3">
+            {reviewers.map((reviewer) => (
+              <label key={reviewer._id} className="flex items-center gap-3 rounded px-2 py-2 text-sm hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={selectedReviewerIds.includes(reviewer._id)}
+                  onChange={(event) => setSelectedReviewerIds((current) => event.target.checked
+                    ? [...current, reviewer._id]
+                    : current.filter((reviewerId) => reviewerId !== reviewer._id))}
+                />
+                <span className="font-medium text-slate-800">{reviewer.name}</span>
+                <span className="ml-auto text-xs text-slate-500">{reviewer.shortCode || reviewer.email}</span>
+              </label>
+            ))}
+            {!reviewers.length && <p className="text-sm text-slate-500">No reviewers are registered.</p>}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button onClick={handleAssignReviewers} disabled={!selectedReviewerIds.length}>
+              Assign Reviewers
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <style>{`
   .select-all {
     user-select: all;
@@ -565,7 +639,9 @@ function statusBadge(status) {
     submitted: "bg-[#f0eeff] text-[#6d5ce8] border-[#d4ccff]",
     fees_pending: "bg-[#fff1f2] text-[#be123c] border-[#fecdd3]",
     admin_verified: "bg-[#e0f2fe] text-[#0369a1] border-[#bae6fd]",
+    scrutiny_verified: "bg-[#e0f2fe] text-[#0369a1] border-[#bae6fd]",
     under_review: "bg-[#fff8e6] text-[#a16207] border-[#fde68a]",
+    admin_decision_pending: "bg-[#fff8e6] text-[#a16207] border-[#fde68a]",
     approved: "bg-[#e0f7f1] text-[#2d7a65] border-[#b2edd9]",
     withdrawn: "bg-gray-100 text-gray-500 border-gray-200",
     rejected: "bg-[#fff1f2] text-[#be123c] border-[#fecdd3]",

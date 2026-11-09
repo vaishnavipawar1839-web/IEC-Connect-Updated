@@ -15,6 +15,8 @@ import documentRoutes from "./routes/documentRoutes.js";
 
 import scrutinyRoutes from "./routes/scrutinyRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js";
+import trackingRoutes from "./routes/trackingRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -69,6 +71,8 @@ app.use("/api/documents", documentRoutes);
 
 app.use("/api/scrutiny", scrutinyRoutes);
 app.use("/api/public", publicRoutes);
+app.use("/api/tracking", trackingRoutes);
+app.use("/api/notifications", notificationRoutes);
 const PORT = process.env.PORT || 3000;
 
 mongoose.connect(process.env.MONGO_URI, {

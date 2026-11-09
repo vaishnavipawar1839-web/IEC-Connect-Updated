@@ -3,6 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useForm, FormProvider } from "react-hook-form";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/api/axios";
+import {
+  getProposalTracking,
+  submitFinalDecision,
+  submitReviewRecommendation,
+} from "@/api/trackingApi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { FileText, ArrowLeft, Download, MessageSquare, CreditCard, Upload, Eye, CheckCircle2 } from "lucide-react";
+import { FileText, ArrowLeft, Download, MessageSquare, CreditCard, Upload, Eye, CheckCircle2, Clock } from "lucide-react";
 
 import {
   SectionAForm,
@@ -27,14 +32,17 @@ export default function DocumentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [proposal, setProposal] = useState(null);
+  const [tracking, setTracking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [submittingFinalDecision, setSubmittingFinalDecision] = useState(false);
   const { user } = useAuth();
 
   const [reviewForm, setReviewForm] = useState({
     text: "",
     decision: "revision_required"
   });
+  const [finalDecisionForm, setFinalDecisionForm] = useState({ decision: "approved", reason: "" });
 
   const [uploadingProof, setUploadingProof] = useState(false);
 
@@ -102,6 +110,8 @@ export default function DocumentDetail() {
 
         setProposal(data);
         reset(data); // Populate RHF state with the cleaned/merged data
+        const trackingResponse = await getProposalTracking(id).catch(() => null);
+        setTracking(trackingResponse?.data || null);
       } catch (error) {
         console.error("Fetch Error:", error);
         toast.error("Failed to load proposal details");
@@ -131,6 +141,10 @@ export default function DocumentDetail() {
       case "submitted": return "bg-blue-100 text-blue-800 hover:bg-blue-100";
       case "fees_pending": return "bg-pink-100 text-pink-800 hover:bg-pink-100";
       case "under_review": return "bg-purple-100 text-purple-800 hover:bg-purple-100";
+      case "admin_verified":
+      case "scrutiny_verified": return "bg-sky-100 text-sky-800 hover:bg-sky-100";
+      case "admin_decision_pending": return "bg-amber-100 text-amber-800 hover:bg-amber-100";
+      case "returned": return "bg-orange-100 text-orange-800 hover:bg-orange-100";
       default: return "bg-gray-100 text-gray-800 hover:bg-gray-100";
     }
   };
@@ -202,20 +216,52 @@ export default function DocumentDetail() {
 
     setSubmittingReview(true);
     try {
-      await api.post(`/proposals/${id}/review/comment`, reviewForm);
-      toast.success("Review submitted successfully");
-      navigate("/dashboard");
-    } catch {
-      toast.error("Failed to submit review");
+      const response = await submitReviewRecommendation(id, reviewForm);
+      const [proposalResponse, trackingResponse] = await Promise.all([
+        api.get(`/proposals/${id}`),
+        getProposalTracking(id),
+      ]);
+      setProposal(proposalResponse.data);
+      setTracking(trackingResponse.data);
+      toast.success(response.data.message || "Recommendation submitted");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to submit recommendation");
     } finally {
       setSubmittingReview(false);
     }
   };
 
-  const isReviewerEligible = proposal &&
-    user?.role === "reviewer" &&
-    proposal.reviewers?.some(r => r._id === user?._id || r === user?._id) &&
-    proposal.status === "under_review";
+  const handleFinalDecision = async () => {
+    if (finalDecisionForm.decision === "rejected" && !finalDecisionForm.reason.trim()) {
+      return toast.error("A rejection reason is required");
+    }
+    setSubmittingFinalDecision(true);
+    try {
+      await submitFinalDecision(id, finalDecisionForm);
+      const [proposalResponse, trackingResponse] = await Promise.all([
+        api.get(`/proposals/${id}`),
+        getProposalTracking(id),
+      ]);
+      setProposal(proposalResponse.data);
+      setTracking(trackingResponse.data);
+      toast.success(finalDecisionForm.decision === "approved" ? "Proposal approved" : "Revision requested from researcher");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to record final decision");
+    } finally {
+      setSubmittingFinalDecision(false);
+    }
+  };
+
+  const currentUserId = user?.id || user?._id;
+  const hasSubmittedReview = tracking?.reviewRecords?.some((review) =>
+    String(review.reviewer?._id || review.reviewer) === String(currentUserId) &&
+    (review.cycle || 1) === (tracking.reviewCycle || 1)
+  );
+  const isReviewerEligible = proposal && user?.role === "reviewer" &&
+    [...(proposal.reviewers || []), ...(proposal.assignedTo || [])]
+      .some((reviewer) => String(reviewer?._id || reviewer) === String(currentUserId)) &&
+    proposal.status === "under_review" && !hasSubmittedReview;
+  const isFinalDecisionEligible = user?.role === "admin" && proposal?.status === "admin_decision_pending";
 
   if (loading) {
     return (
@@ -301,6 +347,86 @@ export default function DocumentDetail() {
           )}
         </div>
       </div>
+
+      {tracking && (
+        <Card className="border-l-4 border-l-sky-500 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Clock className="h-5 w-5 text-sky-600" /> Proposal Tracking
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-slate-500">Current stage</span>
+              <Badge className={getStatusColor(tracking.status)}>
+                {tracking.status.replace(/_/g, " ").toUpperCase()}
+              </Badge>
+              {tracking.reviewProgress?.assigned > 0 && (
+                <span className="text-sm text-slate-500">
+                  Reviewer recommendations: {tracking.reviewProgress.completed} of {tracking.reviewProgress.assigned}
+                </span>
+              )}
+            </div>
+            {tracking.reviewRecords?.some((review) => (review.cycle || 1) === (tracking.reviewCycle || 1)) && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-slate-700">Reviewer recommendations</h3>
+                <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                  {tracking.reviewRecords
+                    .filter((review) => (review.cycle || 1) === (tracking.reviewCycle || 1))
+                    .map((review) => (
+                      <li key={review._id || `${review.reviewer?._id || review.reviewer}-${review.cycle}`} className="flex flex-wrap items-start justify-between gap-3 px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">
+                            {review.reviewer?.name || "Reviewer"}
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{review.comments}</p>
+                        </div>
+                        <Badge variant="outline" className="capitalize">
+                          {review.recommendation.replace(/_/g, " ")}
+                        </Badge>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+            {tracking.finalDecision && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-sm font-semibold capitalize text-slate-800">
+                  Admin final decision: {tracking.finalDecision.decision}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {tracking.finalDecision.decidedBy?.name || "Admin"} · {new Date(tracking.finalDecision.decidedAt).toLocaleString()}
+                </p>
+                {tracking.finalDecision.reason && (
+                  <p className="mt-2 text-sm text-slate-700">{tracking.finalDecision.reason}</p>
+                )}
+              </div>
+            )}
+            {tracking.statusHistory?.length ? (
+              <ol className="space-y-3 border-l border-slate-200 pl-4">
+                {[...tracking.statusHistory].reverse().map((event, index) => (
+                  <li key={`${event.to}-${event.createdAt}-${index}`} className="relative">
+                    <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-sky-500 ring-4 ring-white" />
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <span className="font-semibold capitalize text-slate-800">
+                        {event.to.replace(/_/g, " ")}
+                      </span>
+                      <time className="text-xs text-slate-400">
+                        {new Date(event.createdAt).toLocaleString()}
+                      </time>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {event.actor?.name || "System"}{event.reason ? ` · ${event.reason}` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-slate-500">No status transitions have been recorded yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Reviewer Comments Section - Visible if there are comments */}
       {proposal.comments && proposal.comments.length > 0 && (
@@ -606,7 +732,7 @@ export default function DocumentDetail() {
               {[
                 {
                   id: "approved",
-                  label: "Approve Proposal",
+                  label: "Recommend Approval",
                   activeClass: "border-green-500 bg-green-50",
                   dotClass: "bg-green-500",
                   textClass: "text-green-700"
@@ -620,7 +746,7 @@ export default function DocumentDetail() {
                 },
                 {
                   id: "rejected",
-                  label: "Reject Proposal",
+                  label: "Recommend Rejection",
                   activeClass: "border-red-500 bg-red-50",
                   dotClass: "bg-red-500",
                   textClass: "text-red-700"
@@ -649,7 +775,53 @@ export default function DocumentDetail() {
                 disabled={submittingReview}
                 className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-6 h-auto text-lg rounded-xl shadow-md transition-all active:scale-95"
               >
-                {submittingReview ? "Submitting..." : "Submit Decision"}
+                {submittingReview ? "Submitting..." : "Submit Recommendation"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isFinalDecisionEligible && (
+        <Card className="border-t-4 border-t-emerald-600 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl text-slate-900">Final Admin Decision</CardTitle>
+            <p className="text-sm text-slate-500">
+              All {tracking?.reviewProgress?.assigned || 0} assigned reviewer recommendations are complete.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Final proposal decision">
+              {[
+                ["approved", "Approve", "border-emerald-600 bg-emerald-50 text-emerald-800"],
+                ["rejected", "Reject and Request Revision", "border-rose-600 bg-rose-50 text-rose-800"],
+              ].map(([decision, label, activeClass]) => (
+                <button
+                  key={decision}
+                  type="button"
+                  aria-pressed={finalDecisionForm.decision === decision}
+                  onClick={() => setFinalDecisionForm((current) => ({ ...current, decision }))}
+                  className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                    finalDecisionForm.decision === decision
+                      ? activeClass
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {finalDecisionForm.decision === "rejected" && (
+              <textarea
+                className="w-full min-h-24 rounded-md border border-slate-200 p-3 text-sm"
+                placeholder="Reason for rejection and revision request"
+                value={finalDecisionForm.reason}
+                onChange={(event) => setFinalDecisionForm((current) => ({ ...current, reason: event.target.value }))}
+              />
+            )}
+            <div className="flex justify-end">
+              <Button onClick={handleFinalDecision} disabled={submittingFinalDecision}>
+                {submittingFinalDecision ? "Saving..." : "Record Final Decision"}
               </Button>
             </div>
           </CardContent>
