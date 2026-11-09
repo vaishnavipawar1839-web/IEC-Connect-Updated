@@ -160,6 +160,39 @@ function getAuthErrorMessage(error) {
     return null;
 }
 
+    function getFirstErrorPath(errors, prefix = "") {
+        for (const [key, value] of Object.entries(errors || {})) {
+            const path = prefix ? `${prefix}.${key}` : key;
+            if (value && typeof value === "object" && (value.message || value.type)) return path;
+            if (!value || typeof value !== "object") continue;
+
+            const nestedPath = getFirstErrorPath(value, path);
+            if (nestedPath) return nestedPath;
+        }
+        return null;
+    }
+
+    function getStepForErrorPath(path) {
+        const section = path?.split(".")[0];
+        const stepBySection = {
+            sectionA: 0,
+            sectionB: 1,
+            sectionC: 2,
+            sectionBR: 2,
+            sectionIC: 2,
+            sectionSC: 2,
+            sectionD: 3,
+            sectionPub: 3,
+            sectionE: 4,
+            sectionDecl: 4,
+            sectionF: 5,
+            checklist: 5,
+            checklistFiles: 5,
+            sectionG: 6,
+        };
+        return stepBySection[section] ?? 0;
+    }
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function ProposalWizard() {
     const { id: urlProposalId } = useParams();
@@ -546,17 +579,18 @@ export default function ProposalWizard() {
                 }
             },
             (validationErrors) => {
+                const firstErrorPath = getFirstErrorPath(validationErrors);
+                if (!firstErrorPath) return;
+
+                setCurrentStep(getStepForErrorPath(firstErrorPath));
                 toast.error("Please fix the highlighted errors before submitting", {
-                    description: "Check the red messages in the form",
+                    description: `Opening ${steps[getStepForErrorPath(firstErrorPath)].shortTitle} to the first invalid field.`,
                 });
-                const firstKey = Object.keys(validationErrors)[0];
-                if (firstKey) {
-                    const el = document.querySelector(`[name^="${firstKey}"]`);
-                    if (el) {
-                        el.scrollIntoView({ behavior: "smooth", block: "center" });
-                        el.focus();
-                    }
-                }
+                window.setTimeout(() => {
+                    const field = document.getElementsByName(firstErrorPath)[0];
+                    field?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    field?.focus({ preventScroll: true });
+                }, 0);
             }
         )();
     }, [handleSubmit, ensureProposalId, getValues, navigate]);
