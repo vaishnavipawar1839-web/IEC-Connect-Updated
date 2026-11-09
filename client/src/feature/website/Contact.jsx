@@ -77,7 +77,7 @@ export default function Contact() {
       });
       setSent(true);
       toast.success("Query submitted.");
-    } catch (err) {
+    } catch {
       toast.error("Failed to submit query. Please try again.");
     } finally {
       setLoading(false);

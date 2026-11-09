@@ -60,7 +60,6 @@ export default function AdminProposals() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [proposals, setProposals] = useState([]);
-  const [reviewers, setReviewers] = useState([]);
 
   // Dialog state
   const [verifyId, setVerifyId] = useState(null);
@@ -72,14 +71,12 @@ export default function AdminProposals() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, proposalsRes, reviewersRes] = await Promise.all([
+        const [statsRes, proposalsRes] = await Promise.all([
           api.get("/dashboard/admin"),
           api.get("/admin/proposals"),
-          api.get("/admin/reviewers"),
         ]);
         setStats(statsRes.data);
         setProposals(proposalsRes.data);
-        setReviewers(reviewersRes.data);
       } catch {
         toast.error("Failed to load admin dashboard data");
       } finally {

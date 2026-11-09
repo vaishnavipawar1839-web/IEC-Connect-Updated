@@ -205,7 +205,7 @@ export default function DocumentDetail() {
       await api.post(`/proposals/${id}/review/comment`, reviewForm);
       toast.success("Review submitted successfully");
       navigate("/dashboard");
-    } catch (error) {
+    } catch {
       toast.error("Failed to submit review");
     } finally {
       setSubmittingReview(false);

@@ -44,7 +44,7 @@ export default function ContactAndFeedback() {
             await api.post("/public/contact", contactForm);
             toast.success("Message sent successfully!");
             setContactForm({ name: "", email: "", message: "" });
-        } catch (error) {
+        } catch {
             toast.error("Failed to send message. Try again later.");
         } finally {
             setSendingContact(false);
@@ -63,7 +63,7 @@ export default function ContactAndFeedback() {
             setFeedbackForm({ name: "", role: "", text: "" });
             setShowFeedbackForm(false);
             fetchFeedbacks(); // Refresh list
-        } catch (error) {
+        } catch {
             toast.error("Failed to submit feedback. Try again later.");
         } finally {
             setSubmittingFeedback(false);

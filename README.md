@@ -68,6 +68,7 @@ Create a `.env` file:
 PORT=5000  
 MONGO_URI=your_mongodb_connection_string  
 JWT_SECRET=your_secret_key  
+JWT_REFRESH_SECRET=your_refresh_secret_key
 
 Run backend:
 npm start  
@@ -75,7 +76,7 @@ npm start
 ### 🔹 Frontend Setup
 cd client  
 npm install  
-npm start  
+npm run dev
 
 ## 🔐 Authentication Flow
 1. User registers/logs in  
@@ -92,12 +93,9 @@ npm start
 5. Admin makes final decision  
 6. Researcher gets notified  
 
-## 🧪 Testing (Playwright)
-Run tests:  
-npx playwright test  
-
-Run in headed mode:  
-npx playwright test --headed  
+## 🧪 Testing
+Run server tests from the `server` directory with `npm test`.
+Check the client from the `client` directory with `npm run lint` and `npm run build`.
 
 ## 📈 Future Scope
 - AI-based proposal analysis  

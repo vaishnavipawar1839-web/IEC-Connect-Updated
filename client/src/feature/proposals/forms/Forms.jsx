@@ -1330,11 +1330,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
+import { calculateFee } from "../proposal.utils";
 
 // ─────────────────────────────────────────────
 // PDF HELPER
 // ─────────────────────────────────────────────
-export const openPdfBase64 = (e, base64Data) => {
+const openPdfBase64 = (e, base64Data) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!base64Data) {
         alert("No document data available.");
@@ -2046,8 +2047,8 @@ const SectionDForm = ({ readOnly }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION E  —  11. DECLARATION
 // ═══════════════════════════════════════════════════════════════════════════════
-const SectionEForm = ({ readOnly, onFileUpload }) => {
-    const { register, control, watch, formState: { errors } } = useFormContext();
+const SectionEForm = ({ readOnly }) => {
+    const { register, control, watch } = useFormContext();
 
     const researchTypes = watch("sectionA.typeOfResearch") || [];
     const feeAmount = calculateFee(researchTypes);
@@ -2335,28 +2336,7 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION G  —  FEES & PAYMENT DETAILS
 // ═══════════════════════════════════════════════════════════════════════════════
-export const calculateFee = (types) => {
-    if (!types || !Array.isArray(types)) return 0;
-    
-    let maxFee = 0;
-
-    // Highest Priority: Clinical Trial → ₹1,12,100 (95000 + 17100 GST)
-    if (types.includes("Clinical Trial")) return 112100;
-
-    // Rule 5: Research from Other Institute → ₹10000
-    if (types.includes("Research from Other Institute")) return 10000;
-    
-    // Rule 1: PG Student Dissertation Research → ₹5000
-    if (types.includes("PG Student Dissertation Research")) maxFee = Math.max(maxFee, 5000);
-    
-    // Rule 6: Other Academic (DNB, DM, Nursing, PhD Research) → ₹5000
-    if (types.includes("Other Academic (DNB, DM, Nursing, PhD Research)")) maxFee = Math.max(maxFee, 5000);
-    
-    // Others (PG Non-Dissertation, UG, Faculty) are NIL
-    return maxFee;
-};
-
-const SectionGForm = ({ onFileUpload, readOnly, isSubmitting }) => {
+const SectionGForm = ({ onFileUpload, readOnly }) => {
     const { watch, setValue, formState: { errors } } = useFormContext();
     const researchTypes = watch("sectionA.typeOfResearch") || [];
     const feeAmount = calculateFee(researchTypes);

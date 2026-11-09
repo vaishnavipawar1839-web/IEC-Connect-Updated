@@ -32,16 +32,6 @@ app.use(cookieParser());
 
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
 
-mongoose.plugin(function (schema) {
-  schema.post('save', function (doc) {
-    console.log(`\n[Database Write SUCCESS]`);
-    console.log(`- Database Name:   ${doc.db.name}`);
-    console.log(`- Collection Name: ${doc.collection.collectionName}`);
-    console.log(`- Saved Document:`, doc);
-  });
-});
-
-console.log("Mongo URI:", process.env.MONGO_URI);
 app.use(cors({
   origin: (origin, callback) => {
     const normalizedOrigin = origin ? origin.replace(/\/$/, "") : null;

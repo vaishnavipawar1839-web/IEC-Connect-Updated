@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { proposalSchema } from "@/schemas/proposalSchema";
+import { calculateFee } from "./proposal.utils";
 import {
     SectionAForm,
     SectionBForm,
@@ -261,8 +262,7 @@ export default function ProposalWizard() {
 
     // ── Razorpay Integration ──────────────────────────────────────────────────
     useEffect(() => {
-        const handleRazorpayTrigger = async (event) => {
-            const { feeAmount } = event.detail;
+        const handleRazorpayTrigger = async () => {
             try {
                 // IMPORTANT: Do NOT redirect during order creation as it unmounts the wizard
                 const realId = await ensureProposalId(false); 
@@ -300,7 +300,7 @@ export default function ProposalWizard() {
                                     navigate(`/proposals/${verifyRes.data.proposal._id}/edit`, { replace: true });
                                 }
                             }
-                        } catch (err) {
+                        } catch {
                             toast.error("Payment Verification Failed", {
                                 description: "Something went wrong. Please contact support."
                             });
@@ -323,7 +323,7 @@ export default function ProposalWizard() {
 
         window.addEventListener('triggerRazorpay', handleRazorpayTrigger);
         return () => window.removeEventListener('triggerRazorpay', handleRazorpayTrigger);
-    }, [ensureProposalId, getValues, reset]);
+    }, [ensureProposalId, getValues, reset, navigate, urlProposalId]);
 
 
     // ── Save / update draft ───────────────────────────────────────────────────
@@ -448,7 +448,7 @@ export default function ProposalWizard() {
                 setIsUploading(false);
             }
         },
-        [ensureProposalId, setValue]
+        [ensureProposalId, setValue, clearErrors]
     );
 
     // ── Derived state — MUST be declared before any useCallback that references
@@ -489,7 +489,7 @@ export default function ProposalWizard() {
 
                     // ── Workflow Control: Fees & Payment ──
                     const researchTypes = allData.sectionA?.typeOfResearch || [];
-                    const feeAmount = (await import("./forms/Forms")).calculateFee(researchTypes);
+                    const feeAmount = calculateFee(researchTypes);
                     
                     if (feeAmount > 0) {
                         const allData = getValues();

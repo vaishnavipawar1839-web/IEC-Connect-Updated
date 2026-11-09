@@ -28,7 +28,7 @@ export default function WebsiteHome() {
         const res = await api.get("/public/announcements");
         const data = Array.isArray(res.data) ? res.data : (res.data?.data || res.data?.announcements || []);
         setRecentAnnouncements(data.slice(0, 3)); // Get top 3
-      } catch (err) {
+      } catch {
         console.error("Failed to fetch announcements");
       }
     };
@@ -81,7 +81,7 @@ export default function WebsiteHome() {
             </div>
             <div className="flex-1 overflow-hidden">
               <div className="animate-[marquee_20s_linear_infinite] whitespace-nowrap text-sm font-medium">
-                {recentAnnouncements.map((ann, idx) => (
+                {recentAnnouncements.map((ann) => (
                   <span key={ann._id} className="mx-4 inline-flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#fde68a]"></span>
                     {ann.title}

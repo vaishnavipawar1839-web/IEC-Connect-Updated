@@ -85,6 +85,7 @@ const proposalSchema = new mongoose.Schema(
         feeAmount: { type: Number, default: 0 },
         paymentMethod: { type: String, enum: ["Razorpay", "Manual", "None"], default: "None" },
         transactionId: { type: String },
+        razorpayOrderId: { type: String },
         receiptUrl: { type: String },
         isVerified: { type: Boolean, default: false },
         verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

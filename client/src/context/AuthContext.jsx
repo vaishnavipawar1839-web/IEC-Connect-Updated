@@ -2,6 +2,11 @@ import { createContext, useContext, useEffect, useState } from "react";
 import api from "../api/axios";
 
 const AuthContext = createContext(null);
+const clearStoredAuth = () => {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("userRole");
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -12,7 +17,7 @@ export function AuthProvider({ children }) {
     const storedUser = localStorage.getItem("user");
 
     if (!token || !storedUser) {
-      localStorage.clear();
+      clearStoredAuth();
       setUser(null);
       setStatus("unauthenticated");
       return;
@@ -40,7 +45,7 @@ export function AuthProvider({ children }) {
       }
     } catch (error) {
       console.error("Auth initialization failed:", error);
-      localStorage.clear();
+      clearStoredAuth();
       setUser(null);
       setStatus("unauthenticated");
     }
@@ -68,7 +73,7 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error("Logout request failed:", err);
     } finally {
-      localStorage.clear();
+      clearStoredAuth();
       setUser(null);
       setStatus("unauthenticated");
     }

@@ -126,7 +126,7 @@ function RoleSelector({ onSelect }) {
 
 /* ── Main Login Component ──────────────────────────────────── */
 const Login = () => {
-  const { login, logout, status } = useAuth();
+  const { login, status } = useAuth();
   const navigate = useNavigate();
 
   const [selectedRole, setSelectedRole] = useState(null);

@@ -5,6 +5,13 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 
+const refreshCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  path: "/",
+});
+
 export const registerUser = async (req, res) => {
   try {
     const {
@@ -17,8 +24,9 @@ export const registerUser = async (req, res) => {
     contact,
     email,
     password,
-    role,
   } = req.body;
+
+  const role = "researcher";
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -84,10 +92,8 @@ export const loginUser = async (req, res) => {
 
     // 🍪 HttpOnly cookie
     res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      ...refreshCookieOptions(),
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
 
@@ -105,6 +111,11 @@ export const loginUser = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
+};
+
+export const logoutUser = (req, res) => {
+  res.clearCookie("refreshToken", refreshCookieOptions());
+  res.json({ message: "Logged out successfully" });
 };
 
 export const refreshToken = async (req, res) => {

@@ -1,52 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { Download, FileText, User, Building2 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import * as htmlToImage from 'html-to-image';
 import { toast } from "sonner";
 import { PDFDocument } from 'pdf-lib';
 
-const ResearchPaperView = ({ proposal, autoDownload = false, onDownloadComplete = () => { } }) => {
-    const [protocolUrl, setProtocolUrl] = useState(null);
+const noop = () => {};
 
-    useEffect(() => {
-        if (proposal?.sectionF?.detailedProtocol) {
-            try {
-                let base64String = proposal.sectionF.detailedProtocol;
-                if (base64String.includes(',')) {
-                    base64String = base64String.split(',')[1];
-                }
-                const byteCharacters = atob(base64String);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: "application/pdf" });
-                const blobUrl = URL.createObjectURL(blob);
-                setProtocolUrl(blobUrl);
-            } catch (err) {
-                console.error("Error creating protocol URL:", err);
-            }
-        }
-        return () => {
-            if (protocolUrl) URL.revokeObjectURL(protocolUrl);
-        }
-    }, [proposal?.sectionF?.detailedProtocol]);
+const ResearchPaperView = ({ proposal, autoDownload = false, onDownloadComplete = noop }) => {
+    const protocolData = proposal?.sectionF?.detailedProtocol;
+    const protocolUrl = protocolData
+        ? protocolData.startsWith("data:")
+            ? protocolData
+            : `data:application/pdf;base64,${protocolData}`
+        : null;
 
     const paperId = `research-paper-content-${proposal?._id}`;
 
-    useEffect(() => {
-        if (autoDownload && proposal) {
-            const timer = setTimeout(() => {
-                downloadPaper();
-            }, 1500); // Wait a bit longer for all styles/fonts
-            return () => clearTimeout(timer);
-        }
-    }, [autoDownload, proposal]);
-
-    if (!proposal) return null;
-
-    const { sectionA, createdAt } = proposal;
+    const { sectionA, createdAt } = proposal || {};
 
     const formatDate = (date) => {
         if (!date) return "N/A";
@@ -57,7 +28,7 @@ const ResearchPaperView = ({ proposal, autoDownload = false, onDownloadComplete 
         });
     };
 
-    const downloadPaper = async () => {
+    const downloadPaper = useCallback(async () => {
         const element = document.getElementById(paperId);
         if (!element) {
             onDownloadComplete();
@@ -151,7 +122,16 @@ const ResearchPaperView = ({ proposal, autoDownload = false, onDownloadComplete 
             toast.error("Generation error. Use Browser Print for manual save.", { id: downloadToast });
             onDownloadComplete();
         }
-    };
+    }, [onDownloadComplete, paperId, proposal]);
+
+    useEffect(() => {
+        if (autoDownload && proposal) {
+            const timer = setTimeout(downloadPaper, 1500);
+            return () => clearTimeout(timer);
+        }
+    }, [autoDownload, downloadPaper, proposal]);
+
+    if (!proposal) return null;
 
     return (
         <div className="relative group w-full flex flex-col items-center pb-20">

@@ -5,12 +5,10 @@ import { AlertTriangle } from "lucide-react"
 
 const Textarea = React.forwardRef(({ className, ...props }, ref) => {
   let error;
-  try {
-    const context = useFormContext();
-    if (context?.formState?.errors && props.name) {
-      error = props.name.split('.').reduce((o, i) => o?.[i], context.formState.errors);
-    }
-  } catch (e) {}
+  const context = useFormContext();
+  if (context?.formState?.errors && props.name) {
+    error = props.name.split('.').reduce((o, i) => o?.[i], context.formState.errors);
+  }
 
   return (
     <div className="relative w-full">

@@ -66,7 +66,7 @@ api.interceptors.response.use(
 
     // ── Guard: if the refresh endpoint itself returns any auth error,
     //    bail out immediately — retrying would loop forever.
-    if (originalRequest.url.includes(REFRESH_URL)) {
+    if (originalRequest?.url?.includes(REFRESH_URL)) {
       clearAuthAndRedirect();
       return Promise.reject(error);
     }
@@ -113,13 +113,6 @@ api.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
-    }
-
-    // ── 403: authenticated but not authorised ─────────────────────────────────
-    // Return early so nothing else runs after the redirect.
-    if (status === 403) {
-      clearAuthAndRedirect();
-      return Promise.reject(error);
     }
 
     // ── Everything else passes through unchanged ──────────────────────────────

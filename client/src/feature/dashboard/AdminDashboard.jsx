@@ -1,6 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { LayoutDashboard, FileText, Megaphone, LogOut, Search } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
+import { LayoutDashboard, FileText, Megaphone, Search } from "lucide-react";
 import AdminProposals from "./admin/AdminProposals";
 import AdminDocuments from "./admin/AdminDocuments";
 import AdminAnnouncements from "./admin/AdminAnnouncements";
@@ -8,7 +7,6 @@ import AdminAnnouncements from "./admin/AdminAnnouncements";
 const Documents = lazy(() => import("../documents/Documents"));
 
 export default function AdminDashboard() {
-  const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const navItems = [

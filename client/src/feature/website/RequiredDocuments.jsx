@@ -61,17 +61,14 @@ const feeTable = [
 
 export default function RequiredDocuments() {
   const [adminDocs, setAdminDocs] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDocs = async () => {
       try {
         const res = await api.get("/public/documents");
         setAdminDocs(res.data);
-      } catch (err) {
+      } catch {
         toast.error("Failed to load official download templates.");
-      } finally {
-        setLoading(false);
       }
     };
     fetchDocs();
@@ -93,7 +90,7 @@ export default function RequiredDocuments() {
     return adminDocs.find(
       (ad) => 
         ad.category === category && 
-        ad.subCategory.toLowerCase().trim() === docName.toLowerCase().trim()
+        ad.subCategory?.toLowerCase().trim() === docName.toLowerCase().trim()
     );
   };
 

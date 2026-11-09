@@ -15,7 +15,7 @@ const phases = [
       "Arrange for CV of Principal Investigator and all Co-Investigators.",
       "Determine applicable fee category based on type of project.",
     ],
-  },
+  }, 
   {
     phase: "Phase 2",
     title: "Online Submission",
@@ -102,7 +102,7 @@ export default function SubmissionGuidelines() {
 
       {/* Phase Steps */}
       <section className="max-w-5xl mx-auto px-5 py-12 space-y-6">
-        {phases.map((p, idx) => (
+        {phases.map((p) => (
           <div key={p.phase} className={`rounded-2xl border-l-4 ${p.color} p-6`}>
             <div className="flex items-center gap-3 mb-4">
               <span className={`text-xs font-bold px-3 py-1 rounded-full ${p.badge}`}>{p.phase}</span>

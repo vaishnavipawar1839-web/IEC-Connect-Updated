@@ -2,13 +2,18 @@ import Proposal from "../models/Proposal.js";
 import { getFeeInfo } from "./adminController.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import {
+  canAccessProposal,
+  getResearcherFields,
+  isAssignedReviewer,
+  isProposalOwner,
+} from "../utils/proposalAccess.js";
 
 export const saveDraft = async (req, res) => {
   try {
     const proposalData = {
-      ...req.body,
-      researcher: req.user.id,
-      status: "draft"
+      ...getResearcherFields(req.body),
+      researcher: req.user.id
     };
 
     // Auto-populate root level title from administrative.studyTitle if present
@@ -18,12 +23,17 @@ export const saveDraft = async (req, res) => {
 
     let proposal;
     if (req.body._id) {
-      proposal = await Proposal.findByIdAndUpdate(req.body._id, proposalData, {
+      proposal = await Proposal.findOneAndUpdate(
+        { _id: req.body._id, researcher: req.user.id },
+        proposalData,
+        {
         new: true,
-        runValidators: false
-      });
+        runValidators: true
+        }
+      );
+      if (!proposal) return res.status(404).json({ message: "Draft not found" });
     } else {
-      proposal = new Proposal(proposalData);
+      proposal = new Proposal({ ...proposalData, status: "draft" });
       await proposal.save({ validateBeforeSave: false });
     }
 
@@ -34,13 +44,13 @@ export const saveDraft = async (req, res) => {
 };
 
 export const submitProposal = async (req, res) => {
-  console.log("submitProposal called with ID:", req.params.proposalId);
-
   try {
     const proposal = await Proposal.findById(req.params.proposalId);
     if (!proposal) {
-      console.log("Proposal not found");
       return res.status(404).json({ message: "Proposal not found" });
+    }
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot submit this proposal" });
     }
 
     // Sync title
@@ -69,10 +79,7 @@ export const submitProposal = async (req, res) => {
       // Allow submission if verified (Razorpay) or Paid (Receipt uploaded manually)
       // Statuses that count as "Payment Provided" for submission purposes
       const validStatuses = ["Verified", "Paid", "Under Verification", "Payment Verified"];
-      const isPaidOrVerified = 
-        validStatuses.includes(proposal.paymentStatus) || 
-        validStatuses.includes(proposal.sectionG?.paymentStatus) ||
-        proposal.isVerified;
+      const isPaidOrVerified = validStatuses.includes(proposal.paymentStatus) || proposal.isVerified;
 
       if (proposal.totalPayable > 0 && !isPaidOrVerified) {
         return res.status(400).json({ 
@@ -83,8 +90,6 @@ export const submitProposal = async (req, res) => {
     }
     // For resubmissions (returned / revision_required): leave fee fields untouched.
     // ──────────────────────────────────────────────────────────────────────────
-
-    console.log("Before update - current status:", proposal.status);
 
     // Auto-transition to submitted (or under_review) if fee is cleared
     if (isFirstSubmission || alreadyPaidOrFree) {
@@ -105,17 +110,9 @@ export const submitProposal = async (req, res) => {
       proposal.status = "submitted";
     }
 
-    // ── Update root-level payment status from Section G ──
-    if (proposal.sectionG?.paymentStatus) {
-        proposal.paymentStatus = proposal.sectionG.paymentStatus;
-    }
-
     await proposal.save();
-    console.log("After save - new status:", proposal.status);
-
     res.json({ message: "Proposal submitted", proposal });
   } catch (error) {
-    console.error("Submit error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -129,6 +126,9 @@ export const uploadPaymentProof = async (req, res) => {
     const proposal = await Proposal.findById(req.params.proposalId);
     if (!proposal) {
       return res.status(404).json({ message: "Proposal not found" });
+    }
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot upload payment proof for this proposal" });
     }
 
     const base64Content = req.file.buffer.toString("base64");
@@ -154,6 +154,9 @@ export const downloadPaymentProof = async (req, res) => {
     if (!proposal || !proposal.paymentProofUrl) {
       return res.status(404).json({ message: "Payment proof not found" });
     }
+    if (!isProposalOwner(proposal, req.user.id) && !["admin", "scrutiny"].includes(req.user.role)) {
+      return res.status(403).json({ message: "You cannot access this payment proof" });
+    }
 
     const dataUrl = proposal.paymentProofUrl;
     const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
@@ -175,8 +178,6 @@ export const downloadPaymentProof = async (req, res) => {
 
 export const uploadDocument = async (req, res) => {
   try {
-    console.log("req.file:", req.file ? "present" : "MISSING");
-    console.log("req.body:", req.body);
     if (!req.file) {
       return res.status(400).json({ message: "No file received" });
     }
@@ -185,10 +186,16 @@ export const uploadDocument = async (req, res) => {
     if (!proposal) {
       return res.status(404).json({ message: "Proposal not found" });
     }
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot upload documents to this proposal" });
+    }
 
     const base64Content = req.file.buffer.toString("base64");
 
-    const fieldPath = req.body.field || "documents";
+    const fieldPath = req.body.field;
+    if (fieldPath !== "sectionG.receiptUrl" && !/^checklistFiles\.item_\d+$/.test(fieldPath)) {
+      return res.status(400).json({ message: "Invalid document field" });
+    }
 
     const parts = fieldPath.split(".");
     let current = proposal;
@@ -198,8 +205,15 @@ export const uploadDocument = async (req, res) => {
       }
       current = current[parts[i]];
     }
-    current[parts[parts.length - 1]] = `data:application/pdf;base64,${base64Content}`;
+    current[parts[parts.length - 1]] = `data:${req.file.mimetype};base64,${base64Content}`;
     proposal.markModified(parts[0]);
+
+    if (fieldPath === "sectionG.receiptUrl") {
+      proposal.paymentProofUrl = `data:${req.file.mimetype};base64,${base64Content}`;
+      proposal.paymentStatus = "Under Verification";
+      proposal.paymentMethod = "Manual";
+      proposal.isVerified = false;
+    }
 
     proposal.documents.push({
       fileName: req.file.originalname,
@@ -226,13 +240,8 @@ export const getProposalById = async (req, res) => {
     const proposal = await Proposal.findById(req.params.id).populate("researcher", "name email");
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
 
-    // Allow viewing if approved (public) OR if requester is the owner OR requester is admin/scrutiny
-    const isPublic = proposal.status === "approved";
-    const isOwner = req.user && proposal.researcher?._id.toString() === req.user.id;
-    const isStaff = req.user && ["admin", "scrutiny", "reviewer"].includes(req.user.role);
-
-    if (!isPublic && !isOwner && !isStaff) {
-      return res.status(401).json({ message: "Unauthorized access to this proposal" });
+    if (!canAccessProposal(proposal, req.user)) {
+      return res.status(403).json({ message: "Unauthorized access to this proposal" });
     }
 
     res.json(proposal);
@@ -247,6 +256,9 @@ export const downloadDocuments = async (req, res) => {
     if (!proposal || !proposal.documents || proposal.documents.length === 0) {
       return res.status(404).json({ message: "No documents found" });
     }
+    if (!canAccessProposal(proposal, req.user)) {
+      return res.status(403).json({ message: "You cannot access these documents" });
+    }
 
     // For simplicity, if there's only one, send it. If multiple, we might need a zip.
     // However, the user just wants the download to "work".
@@ -254,9 +266,7 @@ export const downloadDocuments = async (req, res) => {
     const doc = proposal.documents[0];
     const buffer = Buffer.from(doc.fileContent, 'base64');
 
-    res.setHeader('Content-Type', doc.contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${doc.fileName}"`);
-    res.send(buffer);
+    res.type(doc.contentType).attachment(doc.fileName).send(buffer);
   } catch (error) {
     res.status(500).json({ message: "Download failed", error: error.message });
   }
@@ -264,14 +274,18 @@ export const downloadDocuments = async (req, res) => {
 
 export const updateProposal = async (req, res) => {
   try {
-    const updateData = { ...req.body };
+    const updateData = getResearcherFields(req.body);
 
     // Auto-update root title
     if (updateData.administrative && updateData.administrative.studyTitle) {
       updateData.title = updateData.administrative.studyTitle;
     }
 
-    const proposal = await Proposal.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    const proposal = await Proposal.findOneAndUpdate(
+      { _id: req.params.id, researcher: req.user.id },
+      updateData,
+      { new: true, runValidators: true }
+    );
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
     res.json(proposal);
   } catch (error) {
@@ -284,6 +298,9 @@ export const resubmitProposal = async (req, res) => {
     const { responseText } = req.body;
     const proposal = await Proposal.findById(req.params.id);
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot resubmit this proposal" });
+    }
 
     proposal.responses.push({
       researcher: req.user.id,
@@ -307,7 +324,7 @@ export const getProposalForReview = async (req, res) => {
 
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
 
-    if (!proposal.reviewers.includes(req.user.id)) {
+    if (!isAssignedReviewer(proposal, req.user.id)) {
       return res.status(403).json({ message: "Not authorized to review this proposal" });
     }
 
@@ -325,7 +342,7 @@ export const addReviewComment = async (req, res) => {
 
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
 
-    if (!proposal.reviewers.includes(req.user.id)) {
+    if (!isAssignedReviewer(proposal, req.user.id)) {
       return res.status(403).json({ message: "Not authorized to comment" });
     }
 
@@ -357,10 +374,8 @@ export const withdrawProposal = async (req, res) => {
     const { id } = req.params;
     const proposal = await Proposal.findById(id);
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-
-    // Only owner can withdraw
-    if (proposal.researcher.toString() !== req.user.id) {
-      return res.status(403).json({ message: "Unauthorized" });
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot withdraw this proposal" });
     }
 
     // Allowed for any active submission status except terminal ones or draft
@@ -386,15 +401,22 @@ export const createRazorpayOrder = async (req, res) => {
     const { id } = req.params;
     const proposal = await Proposal.findById(id);
     if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot create an order for this proposal" });
+    }
 
     const feeInfo = getFeeInfo(proposal.toObject());
     if (feeInfo.totalPayable <= 0) {
       return res.status(400).json({ message: "No payment required for this proposal" });
     }
 
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(503).json({ message: "Payment processing is not configured" });
+    }
+
     const instance = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_placeholder",
-      key_secret: process.env.RAZORPAY_KEY_SECRET || "rzp_test_secret_placeholder",
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
     });
 
     const options = {
@@ -410,6 +432,7 @@ export const createRazorpayOrder = async (req, res) => {
     proposal.baseFee = feeInfo.baseFee;
     proposal.gstAmount = feeInfo.gstAmount;
     proposal.totalPayable = feeInfo.totalPayable;
+    proposal.razorpayOrderId = order.id;
     await proposal.save();
 
     res.json(order);
@@ -427,6 +450,15 @@ export const verifyRazorpayPayment = async (req, res) => {
       return res.status(400).json({ message: "Missing Razorpay details" });
     }
 
+    const proposal = await Proposal.findById(id);
+    if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+    if (!isProposalOwner(proposal, req.user.id)) {
+      return res.status(403).json({ message: "You cannot verify payment for this proposal" });
+    }
+    if (proposal.razorpayOrderId !== razorpay_order_id) {
+      return res.status(400).json({ message: "Payment order does not match this proposal" });
+    }
+
     const secret = process.env.RAZORPAY_KEY_SECRET;
     if (!secret) {
       console.error("CRITICAL: RAZORPAY_KEY_SECRET is not set in environment.");
@@ -439,12 +471,15 @@ export const verifyRazorpayPayment = async (req, res) => {
       .update(body)
       .digest("hex");
 
-    const isMatch = expectedSignature === razorpay_signature;
+    if (!/^[a-f\d]{64}$/i.test(razorpay_signature)) {
+      return res.status(400).json({ message: "Invalid payment signature" });
+    }
+    const isMatch = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, "hex"),
+      Buffer.from(razorpay_signature, "hex")
+    );
 
     if (isMatch) {
-      const proposal = await Proposal.findById(id);
-      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-
       const feeInfo = getFeeInfo(proposal.toObject());
 
       // Update proposal payment details
@@ -452,6 +487,7 @@ export const verifyRazorpayPayment = async (req, res) => {
       proposal.paymentMethod = "Razorpay";
       proposal.transactionId = razorpay_payment_id;
       proposal.isVerified = true;
+      proposal.razorpayOrderId = undefined;
 
       // Persistence of fee details
       proposal.feeCategory = feeInfo.feeCategory;
