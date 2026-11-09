@@ -123,7 +123,7 @@ export const verifyPayment = async (req, res) => {
     });
     res.json({ message: "Payment verified successfully", proposal });
   } catch (error) {
-    res.status(500).json({ message: "Failed to verify payment", error: error.message });
+    res.status(error.statusCode || 500).json({ message: "Failed to verify payment", error: error.message });
   }
 };
 
@@ -151,7 +151,7 @@ export const rejectPayment = async (req, res) => {
     });
     res.json({ message: "Payment rejected", proposal });
   } catch (error) {
-    res.status(500).json({ message: "Failed to reject payment", error: error.message });
+    res.status(error.statusCode || 500).json({ message: "Failed to reject payment", error: error.message });
   }
 };
 
@@ -163,6 +163,9 @@ export const verifyProposal = async (req, res) => {
 
     if (!proposal) {
       return res.status(404).json({ message: "Proposal not found" });
+    }
+    if (proposal.status !== "submitted") {
+      return res.status(409).json({ message: "Only submitted proposals can be forwarded to SRC" });
     }
 
     // Block verification if fees are required but not yet verified
@@ -197,7 +200,7 @@ export const verifyProposal = async (req, res) => {
     });
   } catch (error) {
     res
-      .status(500)
+      .status(error.statusCode || 500)
       .json({ message: "Verification failed", error: error.message });
   }
 };
@@ -234,7 +237,7 @@ export const returnProposal = async (req, res) => {
     });
     res.json({ message: "Proposal returned for correction", proposal });
   } catch (error) {
-    res.status(500).json({ message: "Failed to return proposal", error: error.message });
+    res.status(error.statusCode || 500).json({ message: "Failed to return proposal", error: error.message });
   }
 };
 

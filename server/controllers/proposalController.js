@@ -115,7 +115,7 @@ export const submitProposal = async (req, res) => {
     });
     res.json({ message: "Proposal submitted", proposal });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(error.statusCode || 500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -248,7 +248,7 @@ export const getProposalById = async (req, res) => {
 
     res.json(proposal);
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(error.statusCode || 500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -385,7 +385,7 @@ export const withdrawProposal = async (req, res) => {
 
     res.json({ message: "Proposal withdrawn successfully", proposal });
   } catch (error) {
-    res.status(500).json({ message: "Failed to withdraw proposal", error: error.message });
+    res.status(error.statusCode || 500).json({ message: "Failed to withdraw proposal", error: error.message });
   }
 };
 

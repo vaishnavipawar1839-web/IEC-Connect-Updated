@@ -23,11 +23,21 @@ export const getProposalTracking = async (req, res) => {
       return res.status(403).json({ message: "You cannot access this proposal timeline" });
     }
 
+    const statusHistory = proposal.statusHistory?.length
+      ? proposal.statusHistory
+      : [{
+        from: null,
+        to: proposal.status,
+        actor: null,
+        reason: "Current status before tracking history was enabled",
+        createdAt: proposal.updatedAt || proposal.createdAt,
+      }];
+
     res.json({
       proposalId: proposal._id,
       status: proposal.status,
       reviewCycle: proposal.reviewCycle || 1,
-      statusHistory: proposal.statusHistory,
+      statusHistory,
       reviewRecords: proposal.reviewRecords,
       reviewProgress: getReviewProgress(proposal),
       finalDecision: proposal.finalDecision,
@@ -181,8 +191,12 @@ export const submitFinalDecision = async (req, res) => {
 
 export const assignProposalReviewers = async (req, res) => {
   try {
-    const reviewerIds = [...new Set(req.body.reviewerIds || [])];
-    if (!reviewerIds.length || reviewerIds.some((reviewerId) => !mongoose.isValidObjectId(reviewerId))) {
+    const requestedReviewerIds = req.body.reviewerIds;
+    if (!Array.isArray(requestedReviewerIds) || !requestedReviewerIds.length) {
+      return res.status(400).json({ message: "Select at least one reviewer" });
+    }
+    const reviewerIds = [...new Set(requestedReviewerIds)];
+    if (reviewerIds.some((reviewerId) => !mongoose.isValidObjectId(reviewerId))) {
       return res.status(400).json({ message: "Select at least one valid reviewer" });
     }
 

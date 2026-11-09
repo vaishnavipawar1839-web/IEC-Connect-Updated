@@ -21,7 +21,7 @@ export const notifyProposalUsers = async ({ recipients, proposalId, type, title,
     console.error("In-app proposal notification delivery failed:", notificationResult.reason.message);
   }
   if (userResult.status === "fulfilled") {
-    await Promise.allSettled(userResult.value.map((user) => sendWorkflowEmail({
+    void Promise.allSettled(userResult.value.map((user) => sendWorkflowEmail({
       to: user.email,
       subject: title,
       message,

@@ -92,6 +92,6 @@ export const scrutinyAction = async (req, res) => {
         res.json({ message: "Action submitted successfully", proposal });
 
     } catch (error) {
-        res.status(500).json({ message: "Action failed", error: error.message });
+        res.status(error.statusCode || 500).json({ message: "Action failed", error: error.message });
     }
 };

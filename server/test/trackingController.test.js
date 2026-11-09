@@ -169,3 +169,15 @@ test("admin assignment validates reviewers and starts the review stage", async (
   assert.deepEqual(proposal.reviewers, [reviewerId]);
   assert.equal(proposal.statusHistory.at(-1).to, "under_review");
 });
+
+test("reviewer assignment rejects malformed reviewerIds payloads with 400", async () => {
+  const response = makeResponse();
+  await assignProposalReviewers({
+    params: { id: "proposal-1" },
+    user: { id: "admin-1" },
+    body: { reviewerIds: { invalid: true } },
+  }, response);
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.message, "Select at least one reviewer");
+});
