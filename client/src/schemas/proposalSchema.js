@@ -37,6 +37,8 @@ export const sectionLocationSchema = z.object({
   details: z.string().optional(),
 });
 
+const requiredChecklistDocuments = [1, 2, 14, 16, 18, 20];
+
 export const proposalSchema = z.object({
   administrative: z.any().optional(),
   research: z.any().optional(),
@@ -73,17 +75,12 @@ export const proposalSchema = z.object({
   checklist: z.object({
     yn_1: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_2: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
+    yn_20: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_14: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_16: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_18: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
   }).passthrough().default({}),
-  checklistFiles: z.object({
-    item_1: z.string({ required_error: "Required document not uploaded", invalid_type_error: "Required document not uploaded" }).min(1, "Required document not uploaded"),
-    item_2: z.string({ required_error: "Required document not uploaded", invalid_type_error: "Required document not uploaded" }).min(1, "Required document not uploaded"),
-    item_14: z.string({ required_error: "Required document not uploaded", invalid_type_error: "Required document not uploaded" }).min(1, "Required document not uploaded"),
-    item_16: z.string({ required_error: "Required document not uploaded", invalid_type_error: "Required document not uploaded" }).min(1, "Required document not uploaded"),
-    item_18: z.string({ required_error: "Required document not uploaded", invalid_type_error: "Required document not uploaded" }).min(1, "Required document not uploaded"),
-  }).passthrough().default({}),
+  checklistFiles: z.object({}).passthrough().default({}),
   sectionG: z.object({
     researchType: z.string().optional(),
     feeAmount: z.number().optional(),
@@ -93,4 +90,16 @@ export const proposalSchema = z.object({
     receiptUrl: z.string().optional(),
     isVerified: z.boolean().optional(),
   }).optional(),
+}).superRefine((proposal, context) => {
+  for (const itemNo of requiredChecklistDocuments) {
+    const answer = proposal.checklist?.[`yn_${itemNo}`];
+    const file = proposal.checklistFiles?.[`item_${itemNo}`];
+    if (answer !== "NA" && (typeof file !== "string" || !file.trim())) {
+      context.addIssue({
+        code: "custom",
+        path: ["checklistFiles", `item_${itemNo}`],
+        message: "Required document not uploaded (select NA if it does not apply)",
+      });
+    }
+  }
 });

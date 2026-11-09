@@ -17,7 +17,7 @@ import {
 } from "../controllers/proposalController.js";
 import { authenticate, optionalAuthenticate } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
-import { upload } from "../middleware/upload.js";
+import { upload, uploadSingle } from "../middleware/upload.js";
 
 const router = express.Router();
 
@@ -39,7 +39,7 @@ router.post(
   "/:proposalId/upload",
   authenticate,
   authorizeRoles("researcher"),
-  upload.single("file"),
+  uploadSingle("file"),
   uploadDocument
 );
 
@@ -47,7 +47,7 @@ router.post(
   "/:proposalId/payment-proof",
   authenticate,
   authorizeRoles("researcher"),
-  upload.single("file"),
+  uploadSingle("file"),
   uploadPaymentProof
 );
 

@@ -6,7 +6,10 @@ const storage = multer.memoryStorage(); // Keeps file in RAM as buffer (no disk)
 const allowedMimeTypes = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword"
+  "application/msword",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ];
 
 export const upload = multer({
@@ -20,3 +23,13 @@ export const upload = multer({
     }
   },
 });
+
+export const uploadSingle = (fieldName = "file") => (req, res, next) => {
+  upload.single(fieldName)(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ message: "File exceeds the 50 MB upload limit" });
+    }
+    return res.status(400).json({ message: error.message || "Invalid uploaded file" });
+  });
+};

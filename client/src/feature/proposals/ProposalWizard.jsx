@@ -425,8 +425,23 @@ export default function ProposalWizard() {
 
             if (!file) return;
 
-            if (file.type !== "application/pdf") {
-                toast.error("Only PDF files are allowed");
+            const isPaymentReceipt = fieldPath === "sectionG.receiptUrl";
+            const fallbackTypeByExtension = {
+                pdf: "application/pdf",
+                jpg: "image/jpeg",
+                jpeg: "image/jpeg",
+                png: "image/png",
+                webp: "image/webp",
+            };
+            const fileType = file.type || fallbackTypeByExtension[file.name.split(".").pop()?.toLowerCase()];
+            const allowedTypes = isPaymentReceipt
+                ? ["application/pdf", "image/jpeg", "image/png", "image/webp"]
+                : ["application/pdf"];
+
+            if (!allowedTypes.includes(fileType)) {
+                toast.error(isPaymentReceipt
+                    ? "Upload a PDF, JPG, PNG, or WebP receipt"
+                    : "Upload a PDF document");
                 // Reset the input so the user can try again
                 e.target.value = "";
                 return;
@@ -448,8 +463,7 @@ export default function ProposalWizard() {
 
                 const res = await api.post(
                     `/proposals/${realId}/upload`,
-                    formData,
-                    { headers: { "Content-Type": "multipart/form-data" } }
+                    formData
                 );
 
                 setValue(fieldPath, res.data.fileUrl, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
@@ -472,7 +486,7 @@ export default function ProposalWizard() {
                 } else if (err.response?.status === 413) {
                     toast.error("File too large — the server rejected it");
                 } else if (err.message !== "Study Title is required before saving") {
-                    toast.error("Upload failed. Please try again.");
+                    toast.error(err.response?.data?.message || err.message || "Upload failed. Please try again.");
                     console.error("Upload error:", err);
                 }
                 // Reset input so the user can retry

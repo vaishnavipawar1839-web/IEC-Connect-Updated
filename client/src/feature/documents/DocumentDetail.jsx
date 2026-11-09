@@ -176,9 +176,7 @@ export default function DocumentDetail() {
 
     setUploadingProof(true);
     try {
-      await api.post(`/proposals/${id}/payment-proof`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(`/proposals/${id}/payment-proof`, formData);
       toast.success("Payment proof uploaded successfully. Admin will verify it shortly.");
       // Refresh proposal data
       const res = await api.get(`/proposals/${id}`);
@@ -567,7 +565,7 @@ export default function DocumentDetail() {
                       type="file"
                       id="paymentProof"
                       className="hidden"
-                      accept="application/pdf,image/*"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
                       onChange={handlePaymentProofUpload}
                     />
                     <Button

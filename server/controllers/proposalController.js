@@ -228,7 +228,7 @@ export const uploadDocument = async (req, res) => {
 
     res.json({
       message: "PDF uploaded and stored as base64",
-      fileUrl: `data:application/pdf;base64,${base64Content}`,
+      fileUrl: `data:${req.file.mimetype};base64,${base64Content}`,
       fileName: req.file.originalname,
     });
   } catch (error) {

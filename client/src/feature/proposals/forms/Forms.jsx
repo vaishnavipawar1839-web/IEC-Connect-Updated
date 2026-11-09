@@ -2160,7 +2160,7 @@ const SectionEForm = ({ readOnly }) => {
 // SECTION F  —  12. CHECKLIST  (Admin + Proposal Related only — no Gov Auth)
 // ═══════════════════════════════════════════════════════════════════════════════
 const SectionFForm = ({ onFileUpload, readOnly }) => {
-    const { register, control, watch } = useFormContext();
+    const { register, control } = useFormContext();
 
     // mandatory: 1, 2, 14, 16, 18
     const adminItems = [
@@ -2168,7 +2168,7 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
         { no: 2, label: "Brief CV of all Investigators", mandatory: true },
         { no: 3, label: "Good Clinical Practice (GCP) training of investigators in last 3 years", mandatory: false },
         { no: 4, label: "Department MOM of reviewing Synopsis (PG Research / PG Dissertation only)", mandatory: false },
-        { no: 5, label: "Basic Course in Biomedical Research (BCBR) Certification (For PG Students & Teachers Synopsis)", mandatory: false },
+        { no: 5, fieldNo: 20, label: "Plagiarism Report", mandatory: true },
         { no: 6, label: "EC Review Fee paid receipt (For PG Dissertation Synopsis)", mandatory: false },
         { no: 7, label: "EC clearance of other centers *", mandatory: false },
         { no: 8, label: "Agreement between collaborating partners *", mandatory: false },
@@ -2177,6 +2177,7 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
         { no: 11, label: "Evidence of external laboratory credentials in case of an externally outsourced laboratory study — QA/QC certification", mandatory: false },
         { no: 12, label: "Copy of contract or agreement signed with the sponsor or donor agency", mandatory: false },
         { no: 13, label: "Provide all significant previous decisions (e.g. those leading to a negative decision or modified protocol) by other ECs / Regulatory authorities for proposed study (whether in same location or elsewhere) and modification(s) to protocol", mandatory: false },
+        { no: 20, fieldNo: 5, label: "Basic Course in Biomedical Research (BCBR) Certification (For PG Students & Teachers Synopsis)", mandatory: false },
     ];
 
     const proposalItems = [
@@ -2192,8 +2193,10 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
     const tdCls = "border border-gray-300 px-2 py-1.5 text-sm align-top";
 
     const YNA = ({ name }) => {
-        const { formState: { errors } } = useFormContext();
+        const { formState: { errors }, trigger } = useFormContext();
         const error = name.split('.').reduce((o, i) => o?.[i], errors);
+        const itemNo = Number(name.split("_").at(-1));
+        const fileName = `checklistFiles.item_${itemNo}`;
         return (
             <Controller name={name} control={control} render={({ field }) => (
                 <div className={`flex flex-col items-center relative p-1 rounded ${error ? "bg-red-50 border border-red-500" : ""}`}>
@@ -2205,7 +2208,11 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
                                     type="radio" 
                                     value={opt} 
                                     checked={String(field.value || "").toUpperCase() === opt.toUpperCase()}
-                                    onChange={() => !readOnly && field.onChange(opt)} 
+                                    onChange={() => {
+                                        if (readOnly) return;
+                                        field.onChange(opt);
+                                        void trigger([name, fileName]);
+                                    }}
                                     disabled={readOnly}
                                     name={field.name}
                                     className="h-4 w-4 text-blue-600 border-gray-300" 
@@ -2221,14 +2228,16 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
     };
 
     const FileCell = ({ itemNo }) => {
-        const { formState: { errors } } = useFormContext();
+        const { formState: { errors }, watch } = useFormContext();
         const fk = `checklistFiles.item_${itemNo}`;
         const val = watch(fk);
+        const answer = watch(`checklist.yn_${itemNo}`);
         const error = fk.split('.').reduce((o, i) => o?.[i], errors);
         
         return (
             <div className={`space-y-1 relative p-2 rounded ${error ? "bg-red-50 border border-red-500" : ""}`}>
-                {!readOnly && <input type="file" name={fk} accept=".pdf" onChange={e => onFileUpload && onFileUpload(e, fk)} className="text-xs w-full" />}
+                {!readOnly && answer !== "NA" && <input type="file" name={fk} accept=".pdf" onChange={e => onFileUpload && onFileUpload(e, fk)} className="text-xs w-full" />}
+                {!readOnly && answer === "NA" && <span className="text-xs text-slate-500 italic">Not required (N/A)</span>}
                 <div className="flex flex-col gap-1">
                     {(itemNo === 6 && (watch("sectionG.isVerified") || watch("sectionG.paymentStatus") === "Verified")) && (
                         <span className="text-green-600 text-[10px] font-bold uppercase tracking-tight flex items-center gap-1">
@@ -2277,26 +2286,27 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
                     </thead>
                     <tbody>
                         {items.map(item => {
-                            const errYn = errors?.checklist?.[`yn_${item.no}`];
-                            const errFile = errors?.checklistFiles?.[`item_${item.no}`];
-                            const errEnc = errors?.checklist?.[`enc_${item.no}`];
+                            const fieldNo = item.fieldNo ?? item.no;
+                            const errYn = errors?.checklist?.[`yn_${fieldNo}`];
+                            const errFile = errors?.checklistFiles?.[`item_${fieldNo}`];
+                            const errEnc = errors?.checklist?.[`enc_${fieldNo}`];
                             const rowHasError = !!(errYn || errFile || errEnc);
                             
                             return (
-                                <tr key={item.no} className={`${item.mandatory ? "bg-amber-50" : "bg-white"} ${rowHasError ? "bg-red-50 ring-2 ring-red-500" : ""}`}>
+                                <tr key={fieldNo} className={`${item.mandatory ? "bg-amber-50" : "bg-white"} ${rowHasError ? "bg-red-50 ring-2 ring-red-500" : ""}`}>
                                     <td className={tdCls + " text-center font-semibold"}>{item.no}</td>
                                     <td className={tdCls}>
                                         {item.label}
                                         {item.mandatory && <span className="ml-1 text-red-500 font-bold" title="Mandatory">*</span>}
                                     </td>
-                                    <td className={tdCls}><YNA name={`checklist.yn_${item.no}`} /></td>
+                                    <td className={tdCls}><YNA name={`checklist.yn_${fieldNo}`} /></td>
                                     <td className={tdCls}>
-                                        <Input {...register(`checklist.enc_${item.no}`)} placeholder="Enc. No."
+                                        <Input {...register(`checklist.enc_${fieldNo}`)} placeholder="Enc. No."
                                             className={readOnly ? "bg-white border-slate-200 text-xs h-7" : "text-xs h-7"} readOnly={readOnly} />
                                     </td>
-                                    <td className={tdCls}><FileCell itemNo={item.no} /></td>
+                                    <td className={tdCls}><FileCell itemNo={fieldNo} /></td>
                                     <td className={tdCls}>
-                                        <Input {...register(`checklist.remarks_${item.no}`)}
+                                        <Input {...register(`checklist.remarks_${fieldNo}`)}
                                             className={readOnly ? "bg-white border-slate-200 text-xs h-7" : "text-xs h-7"} readOnly={readOnly} />
                                     </td>
                                 </tr>
@@ -2326,7 +2336,7 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
             <div className="text-xs text-gray-500 italic mt-3 space-y-1">
                 <p>* For multicentre research. &nbsp; MTA — Material Transfer Agreement.</p>
                 <p className="text-red-600 font-semibold not-italic">
-                    * Mandatory items: 1 (Cover Letter), 2 (CV of Investigators), 14 (Detailed Protocol), 16 (PIS &amp; ICF), 18 (CRF / Questionnaire)
+                    * Mandatory items: 1 (Cover Letter), 2 (CV of Investigators), 5 (Plagiarism Report), 14 (Detailed Protocol), 16 (PIS &amp; ICF), 18 (CRF / Questionnaire)
                 </p>
             </div>
         </div>
@@ -2535,11 +2545,11 @@ const SectionGForm = ({ onFileUpload, readOnly }) => {
                                     </div>
                                     <div className="space-y-1">
                                         <p className="text-sm font-bold text-gray-700">Drop your receipt here</p>
-                                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">PDF, PNG or JPG max 5MB</p>
+                                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">PDF, JPG, PNG or WebP up to 10 MB</p>
                                     </div>
                                     <input 
                                         type="file" 
-                                        accept=".pdf,image/*" 
+                                        accept=".pdf,.jpg,.jpeg,.png,.webp"
                                         onChange={e => onFileUpload && onFileUpload(e, "sectionG.receiptUrl")}
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                     />
