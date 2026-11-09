@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import { loginUser } from "../controllers/userController.js";
+import { loginUser, registerUser } from "../controllers/userController.js";
 import { createReviewer } from "../controllers/adminController.js";
 
 const makeResponse = () => ({
@@ -68,7 +68,7 @@ test("reviewer can sign in when the selected role matches", async (t) => {
   });
 
   const response = makeResponse();
-  await loginUser({ body: { email: "reviewer@example.org", password, role: "reviewer" } }, response);
+  await loginUser({ body: { email: " REVIEWER@Example.ORG ", password, role: "reviewer" } }, response);
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.user.role, "reviewer");
@@ -112,4 +112,41 @@ test("admin provisioning creates reviewer accounts with a hashed password", asyn
   assert.notEqual(createdUser.password, "Valid-reviewer-password");
   assert.equal(response.body.reviewer.role, "reviewer");
   assert.equal(Object.hasOwn(response.body.reviewer, "password"), false);
+});
+
+test("public signup normalizes email and ignores privileged role requests", async (t) => {
+  const previousFindOne = User.findOne;
+  const previousCountDocuments = User.countDocuments;
+  const previousSave = User.prototype.save;
+  let savedUser;
+  User.findOne = async () => null;
+  User.countDocuments = async () => 0;
+  User.prototype.save = async function saveUser() {
+    savedUser = this;
+    return this;
+  };
+  t.after(() => {
+    User.findOne = previousFindOne;
+    User.countDocuments = previousCountDocuments;
+    User.prototype.save = previousSave;
+  });
+
+  const response = makeResponse();
+  await registerUser({
+    body: {
+      name: "Researcher One",
+      designation: "Investigator",
+      qualification: "MD",
+      department: "Medicine",
+      institution: "Example Institute",
+      email: "  RESEARCHER@Example.ORG ",
+      password: "Valid-researcher-password",
+      role: "admin",
+    },
+  }, response);
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(savedUser.role, "researcher");
+  assert.equal(savedUser.email, "researcher@example.org");
+  assert.notEqual(savedUser.password, "Valid-researcher-password");
 });

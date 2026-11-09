@@ -27,14 +27,22 @@ export const registerUser = async (req, res) => {
   } = req.body;
 
   const role = "researcher";
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const requiredFields = [name, designation, qualification, department, institution, password];
+  if (requiredFields.some((value) => typeof value !== "string" || !value.trim())) {
+    return res.status(400).json({ message: "Complete all required registration fields" });
+  }
+  if (password.length < 10) {
+    return res.status(400).json({ message: "Password must be at least 10 characters" });
+  }
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+  if (!emailRegex.test(normalizedEmail)) {
     return res.status(400).json({ message: "Invalid email format" });
   }
 
-  const existingUser = await User.findOne({ email });
+  const existingUser = await User.findOne({ email: normalizedEmail });
   if (existingUser) return res.status(400).json({ message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -51,7 +59,7 @@ export const registerUser = async (req, res) => {
       subDepartment,
       institution,
       contact,
-      email,
+      email: normalizedEmail,
       password: hashedPassword,
       role: role || "researcher",
       shortCode
@@ -69,8 +77,9 @@ export const registerUser = async (req, res) => {
 export const loginUser = async (req, res) => {
   try {
     const { email, password, role: requestedRole } = req.body;
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) return res.status(400).json({ message: "Invalid email or password" });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -166,7 +175,8 @@ export const getPublicStats = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) return res.status(404).json({ message: "No account with that email exists" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
