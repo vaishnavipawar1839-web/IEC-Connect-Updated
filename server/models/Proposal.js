@@ -119,6 +119,7 @@ const proposalSchema = new mongoose.Schema(
         gstAmount: { type: Number, default: 0 },
         totalPayable: { type: Number, default: 0 },
         paymentProofUrl: { type: String },
+        paymentProofFileId: { type: mongoose.Schema.Types.ObjectId },
         rejectionReason: { type: String },
         returnReason: { type: String },
         paymentVerifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -243,6 +244,8 @@ const proposalSchema = new mongoose.Schema(
         documents: [
             {
                 fileName: { type: String },
+                storageKey: { type: String },
+                fieldPath: { type: String },
                 fileContent: { type: String },
                 contentType: { type: String },
                 uploadedAt: { type: Date, default: Date.now }

@@ -518,10 +518,7 @@ export default function DocumentDetail() {
                 variant="outline"
                 size="sm"
                 className="gap-1 text-xs border-purple-300 text-purple-600 hover:bg-purple-50"
-                onClick={() => {
-                  const win = window.open("", "_blank");
-                  win.document.write(`<iframe src="${proposal.sectionG.receiptUrl}" style="width:100%;height:100vh;border:none;"></iframe>`);
-                }}
+                onClick={openPaymentProof}
               >
                 <Eye className="h-3 w-3" /> View Receipt
               </Button>

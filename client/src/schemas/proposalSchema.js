@@ -37,7 +37,8 @@ export const sectionLocationSchema = z.object({
   details: z.string().optional(),
 });
 
-const requiredChecklistDocuments = [1, 2, 14, 16, 18, 20];
+const naWaivableChecklistDocuments = [1, 2, 14, 16, 18];
+const alwaysRequiredChecklistDocuments = [20];
 
 export const proposalSchema = z.object({
   administrative: z.any().optional(),
@@ -75,7 +76,7 @@ export const proposalSchema = z.object({
   checklist: z.object({
     yn_1: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_2: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
-    yn_20: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
+    yn_20: z.enum(["Yes", "No"], { error: "The Plagiarism Report is mandatory" }),
     yn_14: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_16: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
     yn_18: z.string({ required_error: "Please select Yes/No/NA", invalid_type_error: "Please select Yes/No/NA" }).min(1, "Please select Yes/No/NA"),
@@ -91,7 +92,7 @@ export const proposalSchema = z.object({
     isVerified: z.boolean().optional(),
   }).optional(),
 }).superRefine((proposal, context) => {
-  for (const itemNo of requiredChecklistDocuments) {
+  for (const itemNo of naWaivableChecklistDocuments) {
     const answer = proposal.checklist?.[`yn_${itemNo}`];
     const file = proposal.checklistFiles?.[`item_${itemNo}`];
     if (answer !== "NA" && (typeof file !== "string" || !file.trim())) {
@@ -99,6 +100,16 @@ export const proposalSchema = z.object({
         code: "custom",
         path: ["checklistFiles", `item_${itemNo}`],
         message: "Required document not uploaded (select NA if it does not apply)",
+      });
+    }
+  }
+  for (const itemNo of alwaysRequiredChecklistDocuments) {
+    const file = proposal.checklistFiles?.[`item_${itemNo}`];
+    if (typeof file !== "string" || !file.trim()) {
+      context.addIssue({
+        code: "custom",
+        path: ["checklistFiles", `item_${itemNo}`],
+        message: "Plagiarism Report must be uploaded",
       });
     }
   }

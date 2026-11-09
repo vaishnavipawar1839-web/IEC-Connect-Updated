@@ -52,7 +52,7 @@ test("mandatory checklist answers still require their file unless marked NA", ()
   ));
 });
 
-test("plagiarism report is required unless its checklist answer is NA", () => {
+test("plagiarism report is mandatory and cannot be marked NA", () => {
   const proposal = validProposalWithChecklist();
   delete proposal.checklistFiles.item_20;
 
@@ -64,5 +64,8 @@ test("plagiarism report is required unless its checklist answer is NA", () => {
 
   proposal.checklist.yn_20 = "NA";
   const notApplicable = proposalSchema.safeParse(proposal);
-  assert.equal(notApplicable.success, true);
+  assert.equal(notApplicable.success, false);
+  assert.ok(notApplicable.error.issues.some((issue) =>
+    issue.path.join(".") === "checklist.yn_20"
+  ));
 });

@@ -2,6 +2,9 @@ import Proposal from "../models/Proposal.js";
 import { getFeeInfo } from "./adminController.js";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { unlink } from "node:fs/promises";
 import User from "../models/User.js";
 import {
   canAccessProposal,
@@ -12,6 +15,53 @@ import {
 import { initializeProposalHistory, transitionProposal } from "../utils/proposalWorkflow.js";
 import { notifyProposalUsers } from "../utils/proposalNotifications.js";
 import { submitReviewerRecommendation } from "./trackingController.js";
+
+const proposalUploadDirectory = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../private_uploads/proposals"
+);
+
+const removeUploadedFile = async (file) => {
+  if (file?.path) await unlink(file.path).catch(() => {});
+};
+
+const getUploadFailureMessage = (error) => {
+  if (["ENOSPC", "EACCES", "EROFS"].includes(error.code)) {
+    return "Server file storage is unavailable. Please contact the administrator.";
+  }
+  if (error.code === 10334 || /BSONObj size|document is too large/i.test(error.message || "")) {
+    return "This proposal is too large to save. Remove older attachments or contact the administrator.";
+  }
+  if (error.name === "ValidationError") {
+    return "The file was received, but the proposal could not be updated. Check the proposal fields and try again.";
+  }
+  return "The file was received, but could not be saved. Please retry or contact the administrator.";
+};
+
+const sendProposalFile = (res, document, download = false) => {
+  if (document.storageKey) {
+    const storageKey = path.basename(document.storageKey);
+    if (storageKey !== document.storageKey) {
+      return res.status(400).json({ message: "Invalid stored file reference" });
+    }
+    const response = res.type(document.contentType || "application/octet-stream");
+    if (download) response.attachment(document.fileName || "proposal-document");
+    return response.sendFile(path.join(proposalUploadDirectory, storageKey), (error) => {
+      if (error && !res.headersSent) {
+        res.status(404).json({ message: "Stored file is missing" });
+      }
+    });
+  }
+
+  if (document.fileContent) {
+    const buffer = Buffer.from(document.fileContent, "base64");
+    res.type(document.contentType || "application/octet-stream");
+    if (download) res.attachment(document.fileName || "proposal-document");
+    return res.send(buffer);
+  }
+
+  return res.status(404).json({ message: "Stored file is missing" });
+};
 
 export const saveDraft = async (req, res) => {
   try {
@@ -127,15 +177,28 @@ export const uploadPaymentProof = async (req, res) => {
 
     const proposal = await Proposal.findById(req.params.proposalId);
     if (!proposal) {
+      await removeUploadedFile(req.file);
       return res.status(404).json({ message: "Proposal not found" });
     }
     if (!isProposalOwner(proposal, req.user.id)) {
+      await removeUploadedFile(req.file);
       return res.status(403).json({ message: "You cannot upload payment proof for this proposal" });
     }
 
-    const base64Content = req.file.buffer.toString("base64");
-    const mimeType = req.file.mimetype;
-    proposal.paymentProofUrl = `data:${mimeType};base64,${base64Content}`;
+    proposal.documents.push({
+      fileName: req.file.originalname,
+      storageKey: req.file.filename,
+      fieldPath: "sectionG.receiptUrl",
+      contentType: req.file.mimetype,
+      uploadedAt: new Date(),
+    });
+    const storedDocument = proposal.documents[proposal.documents.length - 1];
+    const fileUrl = `/api/proposals/${proposal._id}/files/${storedDocument._id}`;
+    proposal.paymentProofFileId = storedDocument._id;
+    proposal.paymentProofUrl = fileUrl;
+    if (!proposal.sectionG) proposal.sectionG = {};
+    proposal.sectionG.receiptUrl = fileUrl;
+    proposal.markModified("sectionG");
     proposal.paymentStatus = "Under Verification";
 
     await proposal.save();
@@ -145,8 +208,9 @@ export const uploadPaymentProof = async (req, res) => {
       paymentProofUrl: proposal.paymentProofUrl,
     });
   } catch (error) {
+    await removeUploadedFile(req.file);
     console.error("Upload error:", error);
-    res.status(500).json({ message: "Upload failed", error: error.message });
+    res.status(error.statusCode || 500).json({ message: getUploadFailureMessage(error) });
   }
 };
 
@@ -160,11 +224,16 @@ export const downloadPaymentProof = async (req, res) => {
       return res.status(403).json({ message: "You cannot access this payment proof" });
     }
 
+    if (proposal.paymentProofFileId) {
+      const document = proposal.documents.id(proposal.paymentProofFileId);
+      if (!document) return res.status(404).json({ message: "Payment proof file not found" });
+      return sendProposalFile(res, document);
+    }
+
     const dataUrl = proposal.paymentProofUrl;
     const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
     if (!matches) {
-      // Fallback if it's already a direct URL or something else
-      return res.redirect(dataUrl);
+      return res.status(404).json({ message: "Payment proof file not found" });
     }
 
     const contentType = matches[1];
@@ -186,16 +255,17 @@ export const uploadDocument = async (req, res) => {
 
     const proposal = await Proposal.findById(req.params.proposalId);
     if (!proposal) {
+      await removeUploadedFile(req.file);
       return res.status(404).json({ message: "Proposal not found" });
     }
     if (!isProposalOwner(proposal, req.user.id)) {
+      await removeUploadedFile(req.file);
       return res.status(403).json({ message: "You cannot upload documents to this proposal" });
     }
 
-    const base64Content = req.file.buffer.toString("base64");
-
     const fieldPath = req.body.field;
     if (fieldPath !== "sectionG.receiptUrl" && !/^checklistFiles\.item_\d+$/.test(fieldPath)) {
+      await removeUploadedFile(req.file);
       return res.status(400).json({ message: "Invalid document field" });
     }
 
@@ -207,33 +277,37 @@ export const uploadDocument = async (req, res) => {
       }
       current = current[parts[i]];
     }
-    current[parts[parts.length - 1]] = `data:${req.file.mimetype};base64,${base64Content}`;
+    proposal.documents.push({
+      fileName: req.file.originalname,
+      storageKey: req.file.filename,
+      fieldPath,
+      contentType: req.file.mimetype,
+      uploadedAt: new Date(),
+    });
+    const storedDocument = proposal.documents[proposal.documents.length - 1];
+    const fileUrl = `/api/proposals/${proposal._id}/files/${storedDocument._id}`;
+    current[parts[parts.length - 1]] = fileUrl;
     proposal.markModified(parts[0]);
 
     if (fieldPath === "sectionG.receiptUrl") {
-      proposal.paymentProofUrl = `data:${req.file.mimetype};base64,${base64Content}`;
+      proposal.paymentProofUrl = fileUrl;
+      proposal.paymentProofFileId = storedDocument._id;
       proposal.paymentStatus = "Under Verification";
       proposal.paymentMethod = "Manual";
       proposal.isVerified = false;
     }
 
-    proposal.documents.push({
-      fileName: req.file.originalname,
-      fileContent: base64Content,
-      contentType: req.file.mimetype,
-      uploadedAt: new Date(),
-    });
-
     await proposal.save();
 
     res.json({
-      message: "PDF uploaded and stored as base64",
-      fileUrl: `data:${req.file.mimetype};base64,${base64Content}`,
+      message: "Document uploaded",
+      fileUrl,
       fileName: req.file.originalname,
     });
   } catch (error) {
+    await removeUploadedFile(req.file);
     console.error("Upload error:", error);
-    res.status(500).json({ message: "Upload failed", error: error.message });
+    res.status(error.statusCode || 500).json({ message: getUploadFailureMessage(error) });
   }
 };
 
@@ -262,15 +336,25 @@ export const downloadDocuments = async (req, res) => {
       return res.status(403).json({ message: "You cannot access these documents" });
     }
 
-    // For simplicity, if there's only one, send it. If multiple, we might need a zip.
-    // However, the user just wants the download to "work".
-    // Let's send the first document as a fallback or implement basic logic.
-    const doc = proposal.documents[0];
-    const buffer = Buffer.from(doc.fileContent, 'base64');
-
-    res.type(doc.contentType).attachment(doc.fileName).send(buffer);
+    return sendProposalFile(res, proposal.documents[0], true);
   } catch (error) {
     res.status(500).json({ message: "Download failed", error: error.message });
+  }
+};
+
+export const downloadProposalFile = async (req, res) => {
+  try {
+    const proposal = await Proposal.findById(req.params.id);
+    if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+    if (!canAccessProposal(proposal, req.user)) {
+      return res.status(403).json({ message: "You cannot access this document" });
+    }
+
+    const document = proposal.documents.id(req.params.fileId);
+    if (!document) return res.status(404).json({ message: "Document not found" });
+    return sendProposalFile(res, document);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to load document", error: error.message });
   }
 };
 

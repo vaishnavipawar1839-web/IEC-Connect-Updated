@@ -9,6 +9,7 @@ import {
   getProposalForReview,
   addReviewComment,
   downloadDocuments,
+  downloadProposalFile,
   uploadPaymentProof,
   downloadPaymentProof,
   withdrawProposal,
@@ -17,7 +18,7 @@ import {
 } from "../controllers/proposalController.js";
 import { authenticate, optionalAuthenticate } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
-import { upload, uploadSingle } from "../middleware/upload.js";
+import { uploadProposalSingle } from "../middleware/upload.js";
 
 const router = express.Router();
 
@@ -39,7 +40,7 @@ router.post(
   "/:proposalId/upload",
   authenticate,
   authorizeRoles("researcher"),
-  uploadSingle("file"),
+  uploadProposalSingle("file"),
   uploadDocument
 );
 
@@ -47,7 +48,7 @@ router.post(
   "/:proposalId/payment-proof",
   authenticate,
   authorizeRoles("researcher"),
-  uploadSingle("file"),
+  uploadProposalSingle("file"),
   uploadPaymentProof
 );
 
@@ -61,6 +62,12 @@ router.get(
   "/:id/download",
   authenticate,
   downloadDocuments
+);
+
+router.get(
+  "/:id/files/:fileId",
+  authenticate,
+  downloadProposalFile
 );
  
 router.get(

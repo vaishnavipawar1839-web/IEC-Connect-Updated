@@ -1331,61 +1331,52 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { calculateFee } from "../proposal.utils";
+import api from "@/api/axios";
 
 // ─────────────────────────────────────────────
 // PDF HELPER
 // ─────────────────────────────────────────────
-const openPdfBase64 = (e, base64Data) => {
+const openPdfBase64 = async (e, documentUrl) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!base64Data) {
+    if (!documentUrl) {
         alert("No document data available.");
         return;
     }
-    
+
+    const previewWindow = window.open("about:blank", "_blank");
     try {
-        let b = base64Data;
-        // Handle data URI prefix
-        if (b.includes(",")) b = b.split(",")[1];
-        
-        // Sanitize and fix padding
-        b = b.replace(/\s/g, '');
-        while (b.length % 4 !== 0) b += "=";
-        
-        const bin = window.atob(b);
-        const len = bin.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = bin.charCodeAt(i);
-        }
-        
-        const blob = new Blob([bytes], { type: "application/pdf" });
-        const url = URL.createObjectURL(blob);
-        
-        // Try opening in new tab first
-        const win = window.open();
-        if (win) {
-            win.document.title = "View Document";
-            const iframe = win.document.createElement('iframe');
-            iframe.src = url;
-            iframe.style.width = "100%";
-            iframe.style.height = "100%";
-            iframe.style.border = "none";
-            win.document.body.style.margin = "0";
-            win.document.body.appendChild(iframe);
-            win.onbeforeunload = () => URL.revokeObjectURL(url);
+        let blob;
+        if (documentUrl.startsWith("/api/proposals/")) {
+            const response = await api.get(documentUrl.replace(/^\/api/, ""), { responseType: "blob" });
+            blob = response.data;
         } else {
-            // Fallback for popup blockers: Direct download/open
+            const dataUriMatch = documentUrl.match(/^data:([^;,]+);base64,(.+)$/);
+            const mimeType = dataUriMatch?.[1] || "application/pdf";
+            let base64 = dataUriMatch?.[2] || documentUrl;
+            base64 = base64.replace(/\s/g, "");
+            while (base64.length % 4 !== 0) base64 += "=";
+
+            const binary = window.atob(base64);
+            const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+            blob = new Blob([bytes], { type: mimeType });
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        if (previewWindow) {
+            previewWindow.location.href = objectUrl;
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        } else {
             const link = document.createElement("a");
-            link.href = url;
-            link.download = `document_${Date.now()}.pdf`;
+            link.href = objectUrl;
+            link.download = `proposal-document-${Date.now()}`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
         }
     } catch (err) { 
+        previewWindow?.close();
         console.error("PDF Open Error:", err);
-        alert("Could not open PDF. The file data might be corrupted or too large for the browser."); 
+        alert("Could not open this document. Please try uploading it again.");
     }
 };
 
@@ -2162,31 +2153,31 @@ const SectionEForm = ({ readOnly }) => {
 const SectionFForm = ({ onFileUpload, readOnly }) => {
     const { register, control } = useFormContext();
 
-    // mandatory: 1, 2, 14, 16, 18
+    // Required fields retain their legacy keys; display numbers shift after the inserted plagiarism report.
     const adminItems = [
         { no: 1, label: "Cover Letter", mandatory: true },
         { no: 2, label: "Brief CV of all Investigators", mandatory: true },
         { no: 3, label: "Good Clinical Practice (GCP) training of investigators in last 3 years", mandatory: false },
         { no: 4, label: "Department MOM of reviewing Synopsis (PG Research / PG Dissertation only)", mandatory: false },
         { no: 5, fieldNo: 20, label: "Plagiarism Report", mandatory: true },
-        { no: 6, label: "EC Review Fee paid receipt (For PG Dissertation Synopsis)", mandatory: false },
-        { no: 7, label: "EC clearance of other centers *", mandatory: false },
-        { no: 8, label: "Agreement between collaborating partners *", mandatory: false },
-        { no: 9, label: "MTA between collaborating partners *", mandatory: false },
-        { no: 10, label: "Insurance policy / certificate", mandatory: false },
-        { no: 11, label: "Evidence of external laboratory credentials in case of an externally outsourced laboratory study — QA/QC certification", mandatory: false },
-        { no: 12, label: "Copy of contract or agreement signed with the sponsor or donor agency", mandatory: false },
-        { no: 13, label: "Provide all significant previous decisions (e.g. those leading to a negative decision or modified protocol) by other ECs / Regulatory authorities for proposed study (whether in same location or elsewhere) and modification(s) to protocol", mandatory: false },
-        { no: 20, fieldNo: 5, label: "Basic Course in Biomedical Research (BCBR) Certification (For PG Students & Teachers Synopsis)", mandatory: false },
+        { no: 6, fieldNo: 5, label: "Basic Course in Biomedical Research (BCBR) Certification (For PG Students & Teachers Synopsis)", mandatory: false },
+        { no: 7, fieldNo: 6, label: "EC Review Fee paid receipt (For PG Dissertation Synopsis)", mandatory: false },
+        { no: 8, fieldNo: 7, label: "EC clearance of other centers *", mandatory: false },
+        { no: 9, fieldNo: 8, label: "Agreement between collaborating partners *", mandatory: false },
+        { no: 10, fieldNo: 9, label: "MTA between collaborating partners *", mandatory: false },
+        { no: 11, fieldNo: 10, label: "Insurance policy / certificate", mandatory: false },
+        { no: 12, fieldNo: 11, label: "Evidence of external laboratory credentials in case of an externally outsourced laboratory study — QA/QC certification", mandatory: false },
+        { no: 13, fieldNo: 12, label: "Copy of contract or agreement signed with the sponsor or donor agency", mandatory: false },
+        { no: 14, fieldNo: 13, label: "Provide all significant previous decisions (e.g. those leading to a negative decision or modified protocol) by other ECs / Regulatory authorities for proposed study (whether in same location or elsewhere) and modification(s) to protocol", mandatory: false },
     ];
 
     const proposalItems = [
-        { no: 14, label: "Copy of the detailed protocol", mandatory: true },
-        { no: 15, label: "Investigators Brochure (If applicable for drug / biological / device trials)", mandatory: false },
-        { no: 16, label: "Participant Information Sheet (PIS) and Participant Informed Consent Form (ICF) (English and translated)", mandatory: true },
-        { no: 17, label: "Assent form for minors (12–18 years) (English and Translated)", mandatory: false },
-        { no: 18, label: "Proforma / Questionnaire / Case Report Forms (CRF) / Interview guides / Guides for Focused Group Discussions (FGDs) (English and translated)", mandatory: true },
-        { no: 19, label: "Advertisement / material to recruit participants (fliers, posters etc.)", mandatory: false },
+        { no: 15, fieldNo: 14, label: "Copy of the detailed protocol", mandatory: true },
+        { no: 16, fieldNo: 15, label: "Investigators Brochure (If applicable for drug / biological / device trials)", mandatory: false },
+        { no: 17, fieldNo: 16, label: "Participant Information Sheet (PIS) and Participant Informed Consent Form (ICF) (English and translated)", mandatory: true },
+        { no: 18, fieldNo: 17, label: "Assent form for minors (12–18 years) (English and Translated)", mandatory: false },
+        { no: 19, fieldNo: 18, label: "Proforma / Questionnaire / Case Report Forms (CRF) / Interview guides / Guides for Focused Group Discussions (FGDs) (English and translated)", mandatory: true },
+        { no: 20, fieldNo: 19, label: "Advertisement / material to recruit participants (fliers, posters etc.)", mandatory: false },
     ];
 
     const thCls = "border border-gray-300 bg-gray-100 px-2 py-2 text-xs font-semibold text-gray-800 text-center";
@@ -2197,12 +2188,13 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
         const error = name.split('.').reduce((o, i) => o?.[i], errors);
         const itemNo = Number(name.split("_").at(-1));
         const fileName = `checklistFiles.item_${itemNo}`;
+        const options = itemNo === 20 ? ["Yes", "No"] : ["Yes", "No", "NA"];
         return (
             <Controller name={name} control={control} render={({ field }) => (
                 <div className={`flex flex-col items-center relative p-1 rounded ${error ? "bg-red-50 border border-red-500" : ""}`}>
                     {error && <span className="absolute right-0 top-0 text-red-500 text-[10px]">⚠</span>}
                     <div className="flex gap-3 justify-center">
-                        {["Yes", "No", "NA"].map(opt => (
+                        {options.map(opt => (
                             <label key={opt} className="flex flex-col items-center gap-0.5 text-xs cursor-pointer">
                                 <input 
                                     type="radio" 
@@ -2336,7 +2328,7 @@ const SectionFForm = ({ onFileUpload, readOnly }) => {
             <div className="text-xs text-gray-500 italic mt-3 space-y-1">
                 <p>* For multicentre research. &nbsp; MTA — Material Transfer Agreement.</p>
                 <p className="text-red-600 font-semibold not-italic">
-                    * Mandatory items: 1 (Cover Letter), 2 (CV of Investigators), 5 (Plagiarism Report), 14 (Detailed Protocol), 16 (PIS &amp; ICF), 18 (CRF / Questionnaire)
+                    * Mandatory items: 1 (Cover Letter), 2 (CV of Investigators), 5 (Plagiarism Report), 15 (Detailed Protocol), 17 (PIS &amp; ICF), 19 (CRF / Questionnaire)
                 </p>
             </div>
         </div>
